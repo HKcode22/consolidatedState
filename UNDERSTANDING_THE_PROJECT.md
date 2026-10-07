@@ -2199,3 +2199,156 @@ That is the foundation of the application.
 If you remember only one sentence, remember this:
 
 > **ConsolidatedState converts different visual bank-statement layouts into one common transaction schema, proves the extracted numbers are internally consistent, and only then creates one consolidated report.**
+
+
+---
+
+# 45. Why can tests pass while the running website still errors?
+
+This happened during development and is worth understanding.
+
+We saw:
+
+```text
+32 passed
+```
+
+from:
+
+```bash
+pytest -q
+```
+
+but the browser showed:
+
+```text
+ImportError: cannot import name '_statement_frame'
+```
+
+At first that can seem contradictory.
+
+It is not.
+
+## pytest starts a fresh Python process
+
+When `pytest` starts, Python imports the current files from disk from scratch.
+
+Conceptually:
+
+```text
+new Python interpreter
+        ↓
+read current source files
+        ↓
+import modules
+        ↓
+run tests
+```
+
+If the repository is internally consistent, the tests can pass.
+
+## Streamlit is a long-running process
+
+The Streamlit web server may already have imported an earlier version of a module.
+
+Python caches imported modules in:
+
+```text
+sys.modules
+```
+
+During source-code hot reloads, part of the application may be re-executed while another imported module is still the older in-memory object.
+
+That can temporarily produce a state similar to:
+
+```text
+disk:
+    export_excel.py = new version
+
+memory:
+    export_excel module = old version
+
+new export_pdf.py:
+    asks old in-memory export_excel for new helper
+        ↓
+    ImportError
+```
+
+The health endpoint can still say:
+
+```text
+ok
+```
+
+because the Streamlit server process itself is alive.
+
+That does **not** prove the currently rendered application page completed without a Python exception.
+
+## Architectural improvement made after this incident
+
+Originally:
+
+```text
+export_pdf.py
+      ↓
+imports private helper
+      ↓
+export_excel.py
+```
+
+Specifically, the PDF exporter imported helper functions whose names started with an underscore.
+
+That coupling was unnecessary.
+
+We changed the architecture to:
+
+```text
+                 report_data.py
+                 /            \
+                /              \
+       export_excel.py     export_pdf.py
+                \              /
+                 \            /
+                    pipeline.py
+```
+
+Shared report-table functions now live in:
+
+```text
+src/consolidated_state/report_data.py
+```
+
+Important public functions include:
+
+```python
+build_overview_frame(...)
+build_statement_frame(...)
+sum_money(...)
+```
+
+This is cleaner because an Excel exporter should not be the owner of shared business/report data needed by the PDF exporter.
+
+## Regression protection
+
+We also added:
+
+```text
+tests/test_imports.py
+```
+
+which explicitly imports:
+
+```text
+report_data
+export_excel
+export_pdf
+pipeline
+```
+
+This catches broken module dependency/import relationships in a fresh runtime.
+
+For a long-running development server, we still perform a clean process restart after major module-graph changes.
+
+The lesson is:
+
+> **A healthy process is not necessarily a healthy application execution, and a hot-reloaded Python process is not identical to a fresh Python interpreter.**
