@@ -17,6 +17,7 @@ from consolidated_state.consolidate import (
     transactions_to_frame,
 )
 from consolidated_state.export_excel import build_excel_report
+from consolidated_state.export_pdf import build_pdf_report
 from consolidated_state.parser import UnsupportedStatementFormat, parse_statement
 from consolidated_state.pdf_inspect import inspect_and_extract_pdf
 from consolidated_state.readiness import export_is_safe
@@ -185,11 +186,34 @@ if uploaded_files and st.button("Inspect and consolidate", type="primary"):
                 st.write(f"- {reason}")
         st.stop()
 
-    report = build_excel_report(transaction_frame, summary_frame, validation_frame, statement_summaries)
-    st.success("All uploaded statements passed the current validation gates.")
-    st.download_button(
-        "Download consolidated Excel report",
-        data=report,
-        file_name="consolidated_bank_statement_report.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    excel_report = build_excel_report(
+        transaction_frame,
+        summary_frame,
+        validation_frame,
+        statement_summaries,
     )
+    pdf_report = build_pdf_report(
+        transaction_frame,
+        summary_frame,
+        validation_frame,
+        statement_summaries,
+    )
+
+    st.success("All uploaded statements passed the current validation gates.")
+
+    excel_column, pdf_column = st.columns(2)
+    with excel_column:
+        st.download_button(
+            "Download consolidated Excel report",
+            data=excel_report,
+            file_name="consolidated_bank_statement_report.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+    with pdf_column:
+        st.download_button(
+            "Download consolidated PDF report",
+            data=pdf_report,
+            file_name="consolidated_bank_statement_report.pdf",
+            mime="application/pdf",
+        )

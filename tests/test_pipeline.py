@@ -2,11 +2,13 @@ from datetime import date
 from decimal import Decimal
 from io import BytesIO
 
+import fitz
 import pandas as pd
 from openpyxl import load_workbook
 
 from consolidated_state.consolidate import find_duplicate_transactions, monthly_summary, transactions_to_frame
 from consolidated_state.export_excel import build_excel_report
+from consolidated_state.export_pdf import build_pdf_report
 from consolidated_state.models import StatementSummary, Transaction
 from consolidated_state.validate import reconcile_statement, validate_statement_set, validate_transaction_rows
 
@@ -212,3 +214,47 @@ def test_excel_contains_expected_sheets():
     assert metrics["Deposits / additions count"] == 1
     assert metrics["Withdrawals / subtractions count"] == 1
     assert metrics["Ending balance"] == 1095
+
+
+def test_pdf_report_is_valid_and_contains_expected_sections():
+    transactions = transactions_to_frame(sample_transactions())
+    summary = monthly_summary(transactions)
+    validation = pd.DataFrame(
+        [
+            {
+                "source_file": "jan.pdf",
+                "check": "test",
+                "status": "PASS",
+                "detail": "ok",
+                "difference": Decimal("0.00"),
+            }
+        ]
+    )
+    statement = StatementSummary(
+        "jan.pdf",
+        "2026-01-01 to 2026-01-31",
+        Decimal("1000.00"),
+        Decimal("1095.00"),
+        statement_start=date(2026, 1, 1),
+        statement_end=date(2026, 1, 31),
+        account_fingerprint="same",
+        currency="USD",
+        layout_strategy="ledger-two-sided-columns-v2",
+    )
+
+    data = build_pdf_report(
+        transactions,
+        summary,
+        validation,
+        [statement],
+    )
+
+    assert data.startswith(b"%PDF")
+    with fitz.open(stream=data, filetype="pdf") as document:
+        assert document.page_count >= 1
+        text = "\n".join(page.get_text("text") for page in document)
+
+    assert "Consolidated Bank Statement Report" in text
+    assert "Credits / Deposits / Additions" in text
+    assert "Debits / Withdrawals / Subtractions" in text
+    assert "Validation" in text
