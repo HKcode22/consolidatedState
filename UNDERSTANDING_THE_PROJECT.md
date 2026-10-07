@@ -166,6 +166,11 @@ The application is intentionally one small Python web application.
                            │
                            ▼
                       Streamlit UI
+                         app.py
+                           │
+                           ▼
+                 application pipeline
+                      pipeline.py
                            │
                            ▼
                      PDF PRE-FLIGHT
@@ -1323,68 +1328,81 @@ We are not creating a fake official bank document.
 
 ---
 
-# 25. app.py — the entire user workflow
+# 25. pipeline.py — the complete application workflow
 
-After you understand the modules above, read `app.py`.
+The detailed processing workflow now lives in:
 
-It is the orchestrator.
+```text
+src/consolidated_state/pipeline.py
+```
+
+This keeps the web interface small and makes the core workflow testable without a browser.
 
 Its logic is roughly:
 
 ```text
-show page
+receive (filename, PDF bytes)
 ↓
-accept uploads
+inspect every PDF
 ↓
-for each PDF:
-    inspect
-    detect duplicate
-    parse
+detect exact duplicate files
 ↓
-combine transactions
+run the generic parser
 ↓
-validate transactions
+combine normalized transactions
 ↓
-validate statement set
+validate transaction structure
+↓
+validate the set of statements
 ↓
 reconcile every statement
 ↓
-show source interpretation
+calculate totals
 ↓
-show validation
+run the final export gate
 ↓
-show transactions
+if safe:
+    generate Excel
+    generate PDF
 ↓
-show monthly summary
-↓
-check export readiness
-↓
-generate Excel
-↓
-generate PDF
-↓
-show download buttons
+return one ConsolidationResult
 ```
 
-Notice that `app.py` does not itself contain all parsing logic.
+The returned `ConsolidationResult` contains the tables, totals, validation state, blocking reasons, and generated report bytes that the frontend needs.
 
-That is intentional.
-
-A healthy application separates:
+This separation is useful because:
 
 ```text
-UI
-business logic
-parsing
-validation
-export
+app.py = presentation
+pipeline.py = workflow
+generic_parsers.py = extraction
+validate.py = correctness checks
+export_*.py = output
 ```
 
-rather than putting everything into one huge file.
+# 26. app.py — the browser frontend
+
+`app.py` is now intentionally focused on the user experience.
+
+It:
+
+- renders the page;
+- accepts PDF uploads;
+- shows upload count/size;
+- calls `process_statements(...)`;
+- shows summary metrics;
+- presents results in tabs;
+- displays validation failures clearly;
+- exposes the Excel/PDF download buttons;
+- optionally requires a family passcode.
+
+The important point is that `app.py` is **not** where financial parsing rules live.
+
+That makes it safer to redesign the frontend without changing transaction extraction.
 
 ---
 
-# 26. What the frontend should look like
+# 27. What the frontend looks like
 
 The frontend should remain simple.
 
@@ -1442,7 +1460,7 @@ That information can appear in an advanced/source-details section for traceabili
 
 ---
 
-# 27. Replit deployment
+# 28. Replit deployment
 
 The local Replit preview and a published Replit app are different.
 
@@ -1488,7 +1506,7 @@ Before publication we should verify:
 
 ---
 
-# 28. .replit
+# 29. .replit
 
 This file tells Replit how to run the application.
 
@@ -1506,7 +1524,7 @@ You normally do not need to edit this file.
 
 ---
 
-# 29. .streamlit/config.toml
+# 30. .streamlit/config.toml
 
 This contains Streamlit-specific runtime settings.
 
@@ -1528,7 +1546,7 @@ That means:
 
 ---
 
-# 30. requirements.txt
+# 31. requirements.txt
 
 This is the dependency list.
 
@@ -1574,7 +1592,7 @@ these libraries are installed.
 
 ---
 
-# 31. tests/ — why these files are important
+# 32. tests/ — why these files are important
 
 Do not think of tests as optional homework.
 
@@ -1610,7 +1628,7 @@ If even one test fails, we investigate before publishing.
 
 ---
 
-# 32. GitHub Actions
+# 33. GitHub Actions
 
 The file:
 
@@ -1648,7 +1666,7 @@ That is exactly what happened with the clipped `Running Balance` header.
 
 ---
 
-# 33. How support for more banks grows
+# 34. How support for more banks grows
 
 Suppose your dad later sends another bank.
 
@@ -1694,7 +1712,7 @@ The project becomes more universal by accumulating **layout knowledge**, not ban
 
 ---
 
-# 34. What "supports any bank" realistically means
+# 35. What "supports any bank" realistically means
 
 It is important to be precise.
 
@@ -1734,7 +1752,7 @@ Over time, supported coverage increases.
 
 ---
 
-# 35. OCR and scanned statements
+# 36. OCR and scanned statements
 
 Currently the pre-flight can detect a PDF that has no embedded text.
 
@@ -1784,7 +1802,7 @@ balance reconciliation may catch the error.
 
 ---
 
-# 36. Security and privacy model
+# 37. Security and privacy model
 
 Bank statements are sensitive documents.
 
@@ -1798,13 +1816,15 @@ Current design decisions:
 - hash account identifiers for comparison;
 - generated outputs are created for download.
 
-Before wider public use, authentication and stronger deployment/privacy controls would deserve more attention.
+Before wider public use, stronger identity/access management would deserve more attention.
+
+For family use, the current frontend supports an optional `APP_PASSCODE` environment variable. On Replit, this should be stored as a Secret rather than committed to GitHub. The passcode is only a lightweight family-use gate, not enterprise authentication.
 
 For a small family-use MVP, minimizing storage and external services keeps the architecture much simpler.
 
 ---
 
-# 37. Suggested reading order
+# 38. Suggested reading order
 
 If you want to understand the code without becoming overwhelmed, read in this exact order.
 
@@ -1894,15 +1914,26 @@ Understand how normalized data becomes the final report.
 
 ## Step 8
 
+Read:
+
+```text
+src/consolidated_state/pipeline.py
+```
+
+This is where all of the modules are assembled into one end-to-end workflow.
+
+## Step 9
+
 Finally read:
 
 ```text
 app.py
+src/consolidated_state/access.py
 ```
 
-At this point the entire orchestration should be understandable.
+At this point the browser UI and optional family-passcode gate should make sense.
 
-## Step 9
+## Step 10
 
 Read:
 
@@ -1914,7 +1945,7 @@ Tests show concrete examples of what every module is expected to do.
 
 ---
 
-# 38. A complete example from beginning to end
+# 39. A complete example from beginning to end
 
 Imagine the user uploads:
 
@@ -2039,11 +2070,13 @@ That is the complete product.
 
 ---
 
-# 39. What is finished now?
+# 40. What is finished now?
 
 The current foundation includes:
 
-- Streamlit web application;
+- polished Streamlit web application;
+- optional family passcode using the `APP_PASSCODE` environment secret;
+- testable end-to-end processing pipeline;
 - PDF upload;
 - duplicate-file hashing;
 - invalid/encrypted PDF checks;
@@ -2066,7 +2099,7 @@ The current foundation includes:
 
 ---
 
-# 40. What is not finished yet?
+# 41. What is not finished yet?
 
 Important remaining work includes:
 
@@ -2099,7 +2132,7 @@ That decision depends on how Replit publication is configured and how sensitive 
 
 ---
 
-# 41. What should you understand for a project explanation?
+# 42. What should you understand for a project explanation?
 
 If someone asks you:
 
@@ -2135,7 +2168,7 @@ Answer:
 
 ---
 
-# 42. The core philosophy
+# 43. The core philosophy
 
 The most important design rule in this entire project is:
 
@@ -2161,7 +2194,7 @@ That is the foundation of the application.
 
 ---
 
-# 43. One-sentence mental model
+# 44. One-sentence mental model
 
 If you remember only one sentence, remember this:
 
