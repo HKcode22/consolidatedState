@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Local secrets / environment
+.env
+.env.*
+.streamlit/secrets.toml
+
+# Financial documents and generated reports
+*.pdf
+*.PDF
+*.xlsx
+*.xls
+*.csv
+output/
+statements/
+samples/private/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
