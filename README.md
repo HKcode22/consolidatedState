@@ -103,16 +103,20 @@ Cross-statement validation also checks detected account identity, explicit curre
 
 Money arithmetic uses `Decimal`, not binary floating point.
 
-## Output workbook
+## Outputs
 
-The final `.xlsx` report contains:
+The application produces both a detailed Excel workbook and a human-readable consolidated PDF report.
+
+The `.xlsx` report contains:
 
 - `Transactions` — normalized transactions in chronological order
 - `Monthly Summary` — debit, credit, and net totals by month
 - `Validation` — intake, parser, transaction-integrity, and reconciliation checks
 - `About` — report disclaimer and generation notes
 
-The output is a **consolidated report derived from source statements**, not an official bank-issued statement.
+The PDF presents the same consolidated information as a readable document: overview, source-statement interpretation, combined credits/deposits, combined debits/withdrawals, monthly summary, and validation results.
+
+Both outputs are **consolidated reports derived from source statements**, not official bank-issued statements.
 
 ## Privacy
 
