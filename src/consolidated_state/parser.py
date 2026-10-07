@@ -7,6 +7,7 @@ from .generic_parsers import (
     GenericParseError,
     LedgerColumnsStrategy,
     SectionedAmountStrategy,
+    SignedAmountBalanceStrategy,
 )
 from .layout import DocumentLayout, extract_document_layout
 from .metadata import extract_statement_metadata
@@ -27,6 +28,7 @@ class ParserStrategy(Protocol):
 
 PARSERS: list[ParserStrategy] = [
     LedgerColumnsStrategy(),
+    SignedAmountBalanceStrategy(),
     SectionedAmountStrategy(),
 ]
 

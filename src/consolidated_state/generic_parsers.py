@@ -445,6 +445,9 @@ CREDIT_HEADERS = {
 BALANCE_HEADERS = {
     "balance", "runningbalance", "availablebalance",
 }
+AMOUNT_HEADERS = {
+    "amount", "transactionamount", "activityamount",
+}
 DESCRIPTION_HEADERS = {
     "description", "details", "transactiondetails", "narrative", "merchant", "payee",
     "activity", "memo",
@@ -485,6 +488,256 @@ def _ledger_header_columns(row: LayoutRow) -> dict[str, tuple[float, float]] | N
         for key, value in concepts.items()
         if value is not None
     }
+
+
+def _signed_money_from_words(
+    words: list[LayoutWord],
+) -> tuple[Decimal | None, str | None]:
+    amount = money_from_words(words)
+    if amount is None:
+        return None, None
+
+    raw = " ".join(word.text for word in words).upper().strip()
+    compact = raw.replace(" ", "")
+
+    if compact.startswith("-") or (
+        compact.startswith("(") and compact.endswith(")")
+    ):
+        return amount, "debit"
+
+    if compact.startswith("+"):
+        return amount, "credit"
+
+    if re.search(r"\bDR\b", raw):
+        return amount, "debit"
+
+    if re.search(r"\bCR\b", raw):
+        return amount, "credit"
+
+    return amount, None
+
+
+class SignedAmountBalanceStrategy:
+    """Handles Date / Description / Amount / Balance ledgers.
+
+    Direction must be explicit or provable from running-balance movement.
+    Ambiguous rows are rejected.
+    """
+
+    name = "ledger-signed-amount-balance-v1"
+
+    @staticmethod
+    def header_columns(
+        row: LayoutRow,
+    ) -> dict[str, tuple[float, float]] | None:
+        concepts = {
+            "date": _concept_span(row, DATE_HEADERS),
+            "amount": _concept_span(row, AMOUNT_HEADERS),
+            "balance": _concept_span(row, BALANCE_HEADERS),
+        }
+
+        if any(value is None for value in concepts.values()):
+            return None
+
+        if (
+            _concept_span(row, DEBIT_HEADERS) is not None
+            or _concept_span(row, CREDIT_HEADERS) is not None
+        ):
+            return None
+
+        return {
+            key: value
+            for key, value in concepts.items()
+            if value is not None
+        }
+
+    def matches(self, layout: DocumentLayout) -> bool:
+        return any(
+            self.header_columns(row) is not None
+            for page in layout.pages
+            for row in page.rows
+        )
+
+    def parse(self, layout: DocumentLayout, source_file: str) -> ParseResult:
+        date_order = infer_numeric_date_order(layout)
+        opening = find_labeled_balance(
+            layout,
+            ("beginningbalance", "openingbalance"),
+        )
+        closing = find_labeled_balance(
+            layout,
+            ("endingbalance", "closingbalance", "closingledgerbalance"),
+        )
+
+        transactions: list[Transaction] = []
+        previous_balance = opening
+
+        for page in layout.pages:
+            header_index = None
+            header = None
+            columns = None
+
+            for index, row in enumerate(page.rows):
+                detected = self.header_columns(row)
+                if detected is not None:
+                    header_index = index
+                    header = row
+                    columns = detected
+                    break
+
+            if header is None or header_index is None or columns is None:
+                continue
+
+            amount_center = columns["amount"][1]
+            balance_center = columns["balance"][1]
+            amount_balance_boundary = (amount_center + balance_center) / 2
+            amount_left = amount_center - max(page.width * 0.10, 45)
+
+            description_span = _concept_span(header, DESCRIPTION_HEADERS)
+            detail_x = (
+                description_span[0]
+                if description_span is not None
+                else page.width * 0.20
+            )
+
+            for row in page.rows[header_index + 1:]:
+                normalized_line = normalize(row.text)
+                if normalized_line.startswith(
+                    ("total", "closing", "available", "note")
+                ):
+                    continue
+
+                date_words = [
+                    word
+                    for word in row.words
+                    if parse_date(word.text, date_order) is not None
+                    and word.x0 < detail_x
+                ]
+
+                if not date_words:
+                    if transactions:
+                        continuation = " ".join(
+                            word.text
+                            for word in row.words
+                            if detail_x - 2 <= word.x0 < amount_left
+                        ).strip()
+
+                        if continuation:
+                            last = transactions[-1]
+                            transactions[-1] = Transaction(
+                                last.date,
+                                f"{last.description} {continuation}".strip(),
+                                debit=last.debit,
+                                credit=last.credit,
+                                balance=last.balance,
+                                source_file=last.source_file,
+                                statement_period=last.statement_period,
+                            )
+                    continue
+
+                date_word = min(date_words, key=lambda word: word.x0)
+                transaction_date = parse_date(date_word.text, date_order)
+                assert transaction_date is not None
+
+                amount_words = [
+                    word for word in row.words
+                    if amount_left <= word.center_x < amount_balance_boundary
+                ]
+                balance_words = [
+                    word for word in row.words
+                    if word.center_x >= amount_balance_boundary
+                ]
+
+                amount, explicit_direction = _signed_money_from_words(
+                    amount_words
+                )
+                balance = money_from_words(balance_words)
+
+                if amount is None or balance is None:
+                    raise GenericParseError(
+                        "An Amount/Balance row was missing a readable amount or balance."
+                    )
+
+                direction = explicit_direction
+
+                if direction is None and previous_balance is not None:
+                    delta = balance - previous_balance
+                    if abs(abs(delta) - amount) <= Decimal("0.01"):
+                        if delta > 0:
+                            direction = "credit"
+                        elif delta < 0:
+                            direction = "debit"
+
+                if direction is None:
+                    raise GenericParseError(
+                        "Debit/credit direction could not be proven for an Amount-column row."
+                    )
+
+                if previous_balance is not None:
+                    expected = (
+                        previous_balance + amount
+                        if direction == "credit"
+                        else previous_balance - amount
+                    )
+                    if abs(expected - balance) > Decimal("0.01"):
+                        raise GenericParseError(
+                            "Amount direction disagreed with the running balance."
+                        )
+
+                description = " ".join(
+                    word.text
+                    for word in row.words
+                    if detail_x - 2 <= word.x0 < amount_left
+                ).strip()
+
+                transactions.append(
+                    Transaction(
+                        transaction_date,
+                        description,
+                        debit=amount if direction == "debit" else None,
+                        credit=amount if direction == "credit" else None,
+                        balance=balance,
+                        source_file=source_file,
+                    )
+                )
+                previous_balance = balance
+
+        if not transactions:
+            raise GenericParseError(
+                "An Amount/Balance ledger layout was detected, but no transactions could be extracted."
+            )
+
+        if closing is None:
+            closing = transactions[-1].balance
+
+        if opening is None:
+            first = transactions[0]
+            if first.balance is not None:
+                opening = (
+                    first.balance
+                    + (first.debit or Decimal("0"))
+                    - (first.credit or Decimal("0"))
+                )
+
+        period = statement_period(transactions)
+        transactions = [
+            Transaction(
+                transaction.date,
+                transaction.description,
+                debit=transaction.debit,
+                credit=transaction.credit,
+                balance=transaction.balance,
+                source_file=transaction.source_file,
+                statement_period=period,
+            )
+            for transaction in transactions
+        ]
+
+        return ParseResult(
+            transactions,
+            StatementSummary(source_file, period, opening, closing),
+            self.name,
+        )
 
 
 class LedgerColumnsStrategy:

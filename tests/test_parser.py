@@ -170,3 +170,59 @@ def test_ambiguous_numeric_date_uses_statement_period_when_only_one_order_fits()
     result = parse_statement(_text(data), "ambiguous.pdf", pdf_bytes=data)
 
     assert result.transactions[0].date.isoformat() == "2026-01-12"
+
+
+def test_generic_amount_balance_uses_running_balance_for_direction():
+    data = _pdf_bytes(
+        [
+            (40, 20, "Opening Balance"),
+            (530, 20, "1,000.00"),
+            (40, 40, "Statement Period: From Date: 01-JAN-26 To Date 31-JAN-26"),
+            (40, 70, "Date"),
+            (150, 70, "Description"),
+            (430, 70, "Amount"),
+            (530, 70, "Balance"),
+            (40, 90, "01/13/26"),
+            (150, 90, "Deposit"),
+            (430, 90, "100.00"),
+            (530, 90, "1,100.00"),
+            (40, 110, "01/14/26"),
+            (150, 110, "Purchase"),
+            (430, 110, "5.00"),
+            (530, 110, "1,095.00"),
+        ]
+    )
+
+    result = parse_statement(_text(data), "amount-balance.pdf", pdf_bytes=data)
+
+    assert result.parser_name == "ledger-signed-amount-balance-v1"
+    assert str(result.transactions[0].credit) == "100.00"
+    assert str(result.transactions[1].debit) == "5.00"
+    assert str(result.statement.closing_balance) == "1095.00"
+
+
+def test_generic_amount_balance_honors_explicit_signs():
+    data = _pdf_bytes(
+        [
+            (40, 20, "Opening Balance"),
+            (530, 20, "1,000.00"),
+            (40, 40, "Statement Period: From Date: 01-JAN-26 To Date 31-JAN-26"),
+            (40, 70, "Date"),
+            (150, 70, "Description"),
+            (430, 70, "Amount"),
+            (530, 70, "Balance"),
+            (40, 90, "01/13/26"),
+            (150, 90, "Deposit"),
+            (430, 90, "+100.00"),
+            (530, 90, "1,100.00"),
+            (40, 110, "01/14/26"),
+            (150, 110, "Purchase"),
+            (430, 110, "-5.00"),
+            (530, 110, "1,095.00"),
+        ]
+    )
+
+    result = parse_statement(_text(data), "signed.pdf", pdf_bytes=data)
+
+    assert str(result.transactions[0].credit) == "100.00"
+    assert str(result.transactions[1].debit) == "5.00"
