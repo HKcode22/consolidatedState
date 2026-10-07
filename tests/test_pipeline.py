@@ -21,14 +21,26 @@ def sample_transactions():
 def test_monthly_summary_and_reconciliation():
     frame = transactions_to_frame(sample_transactions())
     summary = monthly_summary(frame)
-    assert summary.iloc[0]["total_debits"] == 5.0
-    assert summary.iloc[0]["total_credits"] == 100.0
-    assert summary.iloc[0]["net"] == 95.0
+    assert summary.iloc[0]["total_debits"] == Decimal("5.00")
+    assert summary.iloc[0]["total_credits"] == Decimal("100.00")
+    assert summary.iloc[0]["net"] == Decimal("95.00")
 
     statement = StatementSummary("jan.pdf", "2026-01", Decimal("1000.00"), Decimal("1095.00"))
     result = reconcile_statement(statement, frame)
     assert result["status"] == "PASS"
-    assert result["difference"] == 0.0
+    assert result["difference"] == Decimal("0.00")
+
+
+def test_decimal_math_is_exact_at_cent_level():
+    transactions = [
+        Transaction(date(2026, 1, 1), "A", debit=Decimal("0.10"), source_file="jan.pdf"),
+        Transaction(date(2026, 1, 2), "B", debit=Decimal("0.20"), source_file="jan.pdf"),
+        Transaction(date(2026, 1, 3), "C", credit=Decimal("0.30"), source_file="jan.pdf"),
+    ]
+    summary = monthly_summary(transactions_to_frame(transactions))
+    assert summary.iloc[0]["total_debits"] == Decimal("0.30")
+    assert summary.iloc[0]["total_credits"] == Decimal("0.30")
+    assert summary.iloc[0]["net"] == Decimal("0.00")
 
 
 def test_duplicate_detection():
@@ -40,7 +52,7 @@ def test_duplicate_detection():
 def test_excel_contains_expected_sheets():
     transactions = transactions_to_frame(sample_transactions())
     summary = monthly_summary(transactions)
-    validation = pd.DataFrame([{"source_file": "jan.pdf", "check": "test", "status": "PASS", "detail": "ok", "difference": 0.0}])
+    validation = pd.DataFrame([{"source_file": "jan.pdf", "check": "test", "status": "PASS", "detail": "ok", "difference": Decimal("0.00")}])
     data = build_excel_report(transactions, summary, validation)
     workbook = load_workbook(BytesIO(data))
     assert workbook.sheetnames == ["About", "Transactions", "Monthly Summary", "Validation"]
