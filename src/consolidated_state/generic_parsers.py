@@ -318,15 +318,72 @@ class SectionedAmountStrategy:
         )
 
 
-class LedgerColumnsStrategy:
-    """Handles running ledgers with Date / Debit / Credit / Balance columns."""
+DATE_HEADERS = {
+    "date", "transactiondate", "trandate", "postingdate", "posteddate", "valuedate",
+}
+DEBIT_HEADERS = {
+    "debit", "debits", "withdrawal", "withdrawals", "moneyout", "outflow", "paidout",
+}
+CREDIT_HEADERS = {
+    "credit", "credits", "deposit", "deposits", "moneyin", "inflow", "additions",
+}
+BALANCE_HEADERS = {
+    "balance", "runningbalance", "availablebalance",
+}
+DESCRIPTION_HEADERS = {
+    "description", "details", "transactiondetails", "narrative", "merchant", "payee",
+    "activity", "memo",
+}
 
-    name = "ledger-date-debit-credit-balance-v1"
+
+def _concept_span(
+    row: LayoutRow,
+    aliases: set[str],
+) -> tuple[float, float] | None:
+    words = list(row.words)
+
+    for width in (3, 2, 1):
+        for index in range(0, len(words) - width + 1):
+            group = words[index:index + width]
+            phrase = normalize(" ".join(word.text for word in group))
+            if phrase in aliases:
+                left = group[0].x0
+                center = (group[0].x0 + group[-1].x1) / 2
+                return left, center
+
+    return None
+
+
+def _ledger_header_columns(row: LayoutRow) -> dict[str, tuple[float, float]] | None:
+    concepts = {
+        "date": _concept_span(row, DATE_HEADERS),
+        "debit": _concept_span(row, DEBIT_HEADERS),
+        "credit": _concept_span(row, CREDIT_HEADERS),
+        "balance": _concept_span(row, BALANCE_HEADERS),
+    }
+
+    if any(value is None for value in concepts.values()):
+        return None
+
+    return {
+        key: value
+        for key, value in concepts.items()
+        if value is not None
+    }
+
+
+class LedgerColumnsStrategy:
+    """Handles running ledgers with two money-direction columns and a balance.
+
+    Header wording is structural rather than bank-specific. Examples include:
+    Debit/Credit, Withdrawals/Deposits, and Money Out/Money In.
+    """
+
+    name = "ledger-two-sided-columns-v2"
 
     @staticmethod
     def header(row: LayoutRow) -> bool:
-        words = {normalize(word.text) for word in row.words}
-        return {"date", "debit", "credit", "balance"}.issubset(words)
+        return _ledger_header_columns(row) is not None
 
     def matches(self, layout: DocumentLayout) -> bool:
         return any(
@@ -341,38 +398,29 @@ class LedgerColumnsStrategy:
         for page in layout.pages:
             header_index = None
             header = None
+            columns = None
 
             for index, row in enumerate(page.rows):
-                if self.header(row):
+                detected = _ledger_header_columns(row)
+                if detected is not None:
                     header_index = index
                     header = row
+                    columns = detected
                     break
 
-            if header is None or header_index is None:
+            if header is None or header_index is None or columns is None:
                 continue
 
-            centers: dict[str, float] = {}
-            for key in ("debit", "credit", "balance"):
-                word = next(
-                    word for word in header.words
-                    if normalize(word.text) == key
-                )
-                centers[key] = word.center_x
+            debit_center = columns["debit"][1]
+            credit_center = columns["credit"][1]
+            balance_center = columns["balance"][1]
 
-            detail_words = [
-                word
-                for word in header.words
-                if normalize(word.text)
-                in {"transaction", "details", "description", "narrative"}
-            ]
-            detail_x = min(
-                (word.x0 for word in detail_words),
-                default=page.width * 0.20,
+            description_span = _concept_span(header, DESCRIPTION_HEADERS)
+            detail_x = (
+                description_span[0]
+                if description_span is not None
+                else page.width * 0.20
             )
-
-            debit_center = centers["debit"]
-            credit_center = centers["credit"]
-            balance_center = centers["balance"]
 
             debit_left = debit_center - max(page.width * 0.085, 35)
             debit_credit_boundary = (debit_center + credit_center) / 2
@@ -467,7 +515,7 @@ class LedgerColumnsStrategy:
 
         if not transactions:
             raise GenericParseError(
-                "A ledger layout was detected, but no transaction rows could be extracted."
+                "A two-sided ledger layout was detected, but no transaction rows could be extracted."
             )
 
         period = statement_period(transactions)

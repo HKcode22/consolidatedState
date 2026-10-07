@@ -50,7 +50,7 @@ def test_generic_ledger_layout_without_bank_name():
 
     result = parse_statement(_text(data), "ledger.pdf", pdf_bytes=data)
 
-    assert result.parser_name == "ledger-date-debit-credit-balance-v1"
+    assert result.parser_name == "ledger-two-sided-columns-v2"
     assert len(result.transactions) == 2
     assert result.statement.opening_balance is not None
     assert result.statement.closing_balance is not None
@@ -95,3 +95,31 @@ def test_generic_sectioned_layout_without_bank_name():
     assert str(result.transactions[1].debit) == "5.00"
     assert str(result.statement.opening_balance) == "1000.00"
     assert str(result.statement.closing_balance) == "1095.00"
+
+
+def test_generic_ledger_accepts_money_out_money_in_header_synonyms():
+    data = _pdf_bytes(
+        [
+            (40, 60, "Posting Date"),
+            (150, 60, "Description"),
+            (390, 60, "Money Out"),
+            (465, 60, "Money In"),
+            (535, 60, "Running Balance"),
+            (40, 90, "01/01/26"),
+            (150, 90, "Opening deposit"),
+            (465, 90, "100.00"),
+            (535, 90, "1,100.00"),
+            (40, 110, "01/02/26"),
+            (150, 110, "Purchase"),
+            (390, 110, "25.00"),
+            (535, 110, "1,075.00"),
+        ]
+    )
+
+    result = parse_statement(_text(data), "synonyms.pdf", pdf_bytes=data)
+
+    assert result.parser_name == "ledger-two-sided-columns-v2"
+    assert len(result.transactions) == 2
+    assert str(result.transactions[0].credit) == "100.00"
+    assert str(result.transactions[1].debit) == "25.00"
+    assert str(result.statement.closing_balance) == "1075.00"
