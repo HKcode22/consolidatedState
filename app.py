@@ -166,7 +166,7 @@ if uploaded_files and st.button("Inspect and consolidate", type="primary"):
                 st.write(f"- {reason}")
         st.stop()
 
-    report = build_excel_report(transaction_frame, summary_frame, validation_frame)
+    report = build_excel_report(transaction_frame, summary_frame, validation_frame, statement_summaries)
     st.success("All uploaded statements passed the current validation gates.")
     st.download_button(
         "Download consolidated Excel report",

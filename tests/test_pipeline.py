@@ -91,6 +91,23 @@ def test_excel_contains_expected_sheets():
     transactions = transactions_to_frame(sample_transactions())
     summary = monthly_summary(transactions)
     validation = pd.DataFrame([{"source_file": "jan.pdf", "check": "test", "status": "PASS", "detail": "ok", "difference": Decimal("0.00")}])
-    data = build_excel_report(transactions, summary, validation)
+    statement = StatementSummary("jan.pdf", "2026-01-02 to 2026-01-03", Decimal("1000.00"), Decimal("1095.00"))
+    data = build_excel_report(transactions, summary, validation, [statement])
     workbook = load_workbook(BytesIO(data))
-    assert workbook.sheetnames == ["About", "Transactions", "Monthly Summary", "Validation"]
+    assert workbook.sheetnames == [
+        "Overview",
+        "Credits & Deposits",
+        "Debits & Withdrawals",
+        "All Transactions",
+        "Monthly Summary",
+        "Validation",
+        "About",
+    ]
+    overview = workbook["Overview"]
+    metrics = {
+        overview.cell(row=row, column=1).value: overview.cell(row=row, column=2).value
+        for row in range(2, overview.max_row + 1)
+    }
+    assert metrics["Deposits / additions count"] == 1
+    assert metrics["Withdrawals / subtractions count"] == 1
+    assert metrics["Ending balance"] == 1095
