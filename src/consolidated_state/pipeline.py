@@ -16,6 +16,7 @@ from .models import StatementSummary
 from .parser import UnsupportedStatementFormat, parse_statement
 from .pdf_inspect import inspect_and_extract_pdf
 from .readiness import export_is_safe
+from .report_data import build_statement_frame, sum_money
 from .validate import (
     reconcile_statement,
     validate_statement_set,
@@ -40,43 +41,6 @@ class ConsolidationResult:
     @property
     def net_change(self) -> Decimal:
         return self.total_credits - self.total_debits
-
-
-def _sum_money(series: pd.Series) -> Decimal:
-    total = Decimal("0.00")
-    for value in series:
-        if value is None or pd.isna(value):
-            continue
-        total += value if isinstance(value, Decimal) else Decimal(str(value))
-    return total
-
-
-def _statement_frame(statements: list[StatementSummary]) -> pd.DataFrame:
-    rows = [
-        {
-            "source_file": statement.source_file,
-            "statement_period": statement.statement_period,
-            "currency": statement.currency or "Not explicitly identified",
-            "account_identifier_detected": bool(statement.account_fingerprint),
-            "opening_balance": statement.opening_balance,
-            "closing_balance": statement.closing_balance,
-            "layout_strategy": statement.layout_strategy,
-        }
-        for statement in statements
-    ]
-
-    return pd.DataFrame(
-        rows,
-        columns=[
-            "source_file",
-            "statement_period",
-            "currency",
-            "account_identifier_detected",
-            "opening_balance",
-            "closing_balance",
-            "layout_strategy",
-        ],
-    )
 
 
 def process_statements(
@@ -182,7 +146,7 @@ def process_statements(
 
     inspection_frame = pd.DataFrame(inspections)
     transaction_frame = transactions_to_frame(all_transactions)
-    statement_frame = _statement_frame(statement_summaries)
+    statement_frame = build_statement_frame(statement_summaries)
 
     if transaction_frame.empty:
         validation_frame = pd.DataFrame(validation_rows)
@@ -253,12 +217,12 @@ def process_statements(
         transaction_frame["debit"].notna()
     ]
     total_credits = (
-        _sum_money(credits["credit"])
+        sum_money(credits["credit"])
         if not credits.empty
         else Decimal("0.00")
     )
     total_debits = (
-        _sum_money(debits["debit"])
+        sum_money(debits["debit"])
         if not debits.empty
         else Decimal("0.00")
     )

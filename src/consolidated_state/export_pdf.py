@@ -18,7 +18,7 @@ from reportlab.platypus import (
     TableStyle,
 )
 
-from .export_excel import _overview, _statement_frame
+from .report_data import build_overview_frame, build_statement_frame
 from .models import StatementSummary
 
 DISCLAIMER = (
@@ -146,7 +146,7 @@ def build_pdf_report(
     story.append(Paragraph(DISCLAIMER, styles["BodyText"]))
     story.append(Spacer(1, 0.14 * inch))
 
-    overview = _overview(transactions, statements)
+    overview = build_overview_frame(transactions, statements)
     overview_rows = [
         [row["Metric"], row["Value"]]
         for _, row in overview.iterrows()
@@ -162,7 +162,7 @@ def build_pdf_report(
     )
 
     _section_title(story, "Source Statements", styles)
-    source = _statement_frame(statements)
+    source = build_statement_frame(statements)
     source_rows = [
         [
             row["source_file"],
