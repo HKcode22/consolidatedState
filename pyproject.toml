@@ -1,0 +1,10 @@
+[project]
+name = "bank-statement-consolidator"
+version = "0.1.0"
+description = "In-memory bank statement inspection and consolidation for family use"
+requires-python = ">=3.11"
+dependencies = [
+    "openpyxl>=3.1.5",
+    "pypdf>=6.19.0",
+    "streamlit>=1.65.0",
+]

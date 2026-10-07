@@ -1,45 +1,48 @@
-# [Project name]
+# Bank Statement Consolidator
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+A family-use Streamlit app for inspecting up to 12 monthly bank-statement PDFs and, once one bank layout is confirmed, consolidating transactions into an Excel workbook.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- `streamlit run app.py --server.address 0.0.0.0 --server.port 5000` — run the app
+- Python dependencies are declared in `pyproject.toml` and locked in `uv.lock`.
+- No database or application secrets are required for local processing.
 
 ## Stack
 
-- pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- Python 3.11, Streamlit, pypdf, and openpyxl.
+- The existing pnpm workspace scaffold remains available, but the bank-statement app runs as a Streamlit workflow.
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `app.py` — Streamlit upload and review interface.
+- `statement_processing.py` — in-memory PDF inspection and duplicate detection.
+- `workbook.py` — in-memory Excel workbook generation for the confirmed parser output.
+- `pyproject.toml` / `uv.lock` — Python dependency source of truth.
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- PDF bytes and extracted text are processed in memory; do not add disk, database, or object-storage persistence.
+- Do not send bank documents to an LLM or external extraction API.
+- Build a parser only for the bank layout confirmed from representative statements; refuse uncertain rows rather than guessing.
+- Do not add OCR unless the sample PDFs show that statements are scanned.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+- Accept 1–12 PDF statements, identify duplicate files, and report whether embedded text is available.
+- The first version will support one bank layout and export Transactions, Monthly Summary, and Validation worksheets after that layout is confirmed.
+- Before publishing for family use, verify access restrictions; the initial app shell does not add sign-in.
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+- Keep this a small family-use app, not a multi-bank platform.
+- Do not retain bank statements, use OCR preemptively, or make LLM/API calls with financial documents.
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- Text extraction is a format inspection step, not evidence that transaction rows were parsed correctly.
+- Keep uploaded PDFs out of GitHub and out of sample/test fixtures.
 
 ## Pointers
 
-- See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
+- See `README.md` for the app run command and initial privacy/processing scope.
