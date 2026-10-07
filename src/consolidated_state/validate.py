@@ -7,6 +7,16 @@ import pandas as pd
 from .models import StatementSummary
 
 CENT = Decimal("0.01")
+ZERO = Decimal("0.00")
+
+
+def _sum_money(series: pd.Series) -> Decimal:
+    total = ZERO
+    for value in series:
+        if value is None or pd.isna(value):
+            continue
+        total += value if isinstance(value, Decimal) else Decimal(str(value))
+    return total
 
 
 def reconcile_statement(statement: StatementSummary, frame: pd.DataFrame) -> dict[str, object]:
@@ -21,8 +31,8 @@ def reconcile_statement(statement: StatementSummary, frame: pd.DataFrame) -> dic
         }
 
     rows = frame[frame["source_file"] == statement.source_file] if not frame.empty else frame
-    debits = Decimal(str(rows["debit"].fillna(0).sum())) if not rows.empty else Decimal("0")
-    credits = Decimal(str(rows["credit"].fillna(0).sum())) if not rows.empty else Decimal("0")
+    debits = _sum_money(rows["debit"]) if not rows.empty else ZERO
+    credits = _sum_money(rows["credit"]) if not rows.empty else ZERO
     expected_close = statement.opening_balance + credits - debits
     difference = statement.closing_balance - expected_close
     passed = abs(difference) <= CENT
@@ -32,5 +42,5 @@ def reconcile_statement(statement: StatementSummary, frame: pd.DataFrame) -> dic
         "check": "balance_reconciliation",
         "status": "PASS" if passed else "FAIL",
         "detail": "Opening + credits - debits matches closing balance." if passed else "Statement totals do not reconcile.",
-        "difference": float(difference),
+        "difference": difference,
     }
