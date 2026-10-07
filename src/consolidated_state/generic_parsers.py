@@ -454,6 +454,31 @@ DESCRIPTION_HEADERS = {
 }
 
 
+def _header_alias_matches(
+    phrase: str,
+    alias: str,
+) -> bool:
+    """Match header concepts conservatively, including minor PDF text clipping.
+
+    Some PDFs visually show a complete heading while their embedded text drops
+    the last character (for example "Balance" may extract as "Balanc"). Exact
+    matching remains preferred; a very high-similarity fallback is used only
+    for reasonably long header tokens.
+    """
+    if phrase == alias:
+        return True
+
+    if len(phrase) < 5 or len(alias) < 5:
+        return False
+
+    if phrase.startswith(alias) or alias.startswith(phrase):
+        shorter = min(len(phrase), len(alias))
+        longer = max(len(phrase), len(alias))
+        return shorter / longer >= 0.88
+
+    return difflib.SequenceMatcher(None, phrase, alias).ratio() >= 0.92
+
+
 def _concept_span(
     row: LayoutRow,
     aliases: set[str],
@@ -464,7 +489,11 @@ def _concept_span(
         for index in range(0, len(words) - width + 1):
             group = words[index:index + width]
             phrase = normalize(" ".join(word.text for word in group))
-            if phrase in aliases:
+
+            if any(
+                _header_alias_matches(phrase, alias)
+                for alias in aliases
+            ):
                 left = group[0].x0
                 center = (group[0].x0 + group[-1].x1) / 2
                 return left, center
