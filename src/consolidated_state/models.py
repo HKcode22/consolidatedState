@@ -26,6 +26,7 @@ class StatementSummary:
     statement_end: date | None = None
     account_fingerprint: str | None = None
     currency: str | None = None
+    layout_strategy: str = ""
 
 
 @dataclass(frozen=True)

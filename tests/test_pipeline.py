@@ -185,11 +185,13 @@ def test_excel_contains_expected_sheets():
         statement_end=date(2026, 1, 31),
         account_fingerprint="same",
         currency="USD",
+        layout_strategy="ledger-two-sided-columns-v2",
     )
     data = build_excel_report(transactions, summary, validation, [statement])
     workbook = load_workbook(BytesIO(data))
     assert workbook.sheetnames == [
         "Overview",
+        "Source Statements",
         "Credits & Deposits",
         "Debits & Withdrawals",
         "All Transactions",
@@ -197,6 +199,9 @@ def test_excel_contains_expected_sheets():
         "Validation",
         "About",
     ]
+    source_statements = workbook["Source Statements"]
+    assert source_statements.cell(row=2, column=7).value == "ledger-two-sided-columns-v2"
+
     overview = workbook["Overview"]
     metrics = {
         overview.cell(row=row, column=1).value: overview.cell(row=row, column=2).value

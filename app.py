@@ -145,13 +145,31 @@ if uploaded_files and st.button("Inspect and consolidate", type="primary"):
     validation_frame = pd.DataFrame(validation_rows)
     summary_frame = monthly_summary(transaction_frame)
 
-    st.subheader("2. Validation")
+    statement_frame = pd.DataFrame(
+        [
+            {
+                "source_file": statement.source_file,
+                "statement_period": statement.statement_period,
+                "currency": statement.currency or "Not explicitly identified",
+                "account_identifier_detected": bool(statement.account_fingerprint),
+                "opening_balance": statement.opening_balance,
+                "closing_balance": statement.closing_balance,
+                "layout_strategy": statement.layout_strategy,
+            }
+            for statement in statement_summaries
+        ]
+    )
+
+    st.subheader("2. Source statement interpretation")
+    st.dataframe(statement_frame, use_container_width=True, hide_index=True)
+
+    st.subheader("3. Validation")
     st.dataframe(validation_frame, use_container_width=True, hide_index=True)
 
-    st.subheader("3. Consolidated transactions")
+    st.subheader("4. Consolidated transactions")
     st.dataframe(transaction_frame, use_container_width=True, hide_index=True)
 
-    st.subheader("4. Monthly summary")
+    st.subheader("5. Monthly summary")
     st.dataframe(summary_frame, use_container_width=True, hide_index=True)
 
     safe_to_export, blocking_reasons = export_is_safe(

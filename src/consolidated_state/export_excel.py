@@ -96,6 +96,33 @@ def _overview(
     return pd.DataFrame(rows, columns=["Metric", "Value"])
 
 
+def _statement_frame(statements: list[StatementSummary]) -> pd.DataFrame:
+    rows = [
+        {
+            "source_file": statement.source_file,
+            "statement_period": statement.statement_period,
+            "currency": statement.currency or "Not explicitly identified",
+            "account_identifier_detected": bool(statement.account_fingerprint),
+            "opening_balance": statement.opening_balance,
+            "closing_balance": statement.closing_balance,
+            "layout_strategy": statement.layout_strategy,
+        }
+        for statement in statements
+    ]
+    return pd.DataFrame(
+        rows,
+        columns=[
+            "source_file",
+            "statement_period",
+            "currency",
+            "account_identifier_detected",
+            "opening_balance",
+            "closing_balance",
+            "layout_strategy",
+        ],
+    )
+
+
 def build_excel_report(
     transactions: pd.DataFrame,
     summary: pd.DataFrame,
@@ -113,6 +140,7 @@ def build_excel_report(
 
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
         _overview(transactions, statements).to_excel(writer, sheet_name="Overview", index=False)
+        _statement_frame(statements).to_excel(writer, sheet_name="Source Statements", index=False)
         credits[credit_columns].to_excel(writer, sheet_name="Credits & Deposits", index=False)
         debits[debit_columns].to_excel(writer, sheet_name="Debits & Withdrawals", index=False)
         transactions.to_excel(writer, sheet_name="All Transactions", index=False)
@@ -128,6 +156,7 @@ def build_excel_report(
 
         data_sheets = [
             "Overview",
+            "Source Statements",
             "Credits & Deposits",
             "Debits & Withdrawals",
             "All Transactions",
@@ -153,6 +182,7 @@ def build_excel_report(
                 )
 
         for sheet_name, money_headers in {
+            "Source Statements": ("opening_balance", "closing_balance"),
             "Credits & Deposits": ("credit",),
             "Debits & Withdrawals": ("debit",),
             "All Transactions": ("debit", "credit", "balance"),

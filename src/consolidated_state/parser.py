@@ -49,6 +49,7 @@ def _enrich_result(result: ParseResult, layout: DocumentLayout) -> ParseResult:
         statement_end=metadata.statement_end,
         account_fingerprint=metadata.account_fingerprint,
         currency=metadata.currency,
+        layout_strategy=result.parser_name,
     )
 
     transactions = [
