@@ -38,8 +38,9 @@ The parser chooses a strategy from document structure rather than a bank name.
 
 Initial layout families:
 
-- running ledger: Date / Details / Debit / Credit / Balance
+- two-sided running ledger: Date / Details / Debit/Credit (or Withdrawals/Deposits, Money Out/Money In) / Balance
 - sectioned activity: Deposits/Credits and Withdrawals/Debits, each with Date / Description / Amount
+- single-amount ledger: Date / Description / Amount / Balance, with direction proven by sign or balance movement
 
 New examples are used to discover **new layout families**, not to hardcode bank brands.
 
@@ -49,6 +50,10 @@ New examples are used to discover **new layout families**, not to hardcode bank 
 - Every row must have a date, description, source, and exactly one debit/credit side.
 - Duplicate/overlapping transaction detection.
 - Opening + credits - debits = closing balance where balances are available.
+- Same-account compatibility checks using hashed account identifiers when detectable.
+- Explicit-currency consistency checks; no currency conversion.
+- Statement-period overlap/gap checks and adjacent balance continuity.
+- International numeric-date order is inferred safely instead of assuming U.S. format.
 - Fail-closed export: one failed input blocks the consolidated workbook.
 
 ## Phase 5 — Consolidation

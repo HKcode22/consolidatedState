@@ -19,8 +19,9 @@ Streamlit app
   +-- coordinate-aware PDF layout extraction
   |
   +-- strategy detector
-  |     +-- running ledger
+  |     +-- two-sided running ledger
   |     +-- sectioned activity
+  |     +-- Amount + running Balance ledger
   |     +-- future layout families
   |
   +-- normalized transactions
@@ -75,8 +76,12 @@ Before export:
 
 - every uploaded file must parse;
 - normalized transaction rows must pass structural checks;
-- potential duplicates must be reviewed;
-- opening/closing balances must reconcile when available.
+- potential cross-statement duplicates must be reviewed;
+- detected account identifiers must be compatible;
+- explicit currencies must not conflict;
+- statement periods must not overlap unexpectedly;
+- adjacent opening/closing balances must remain continuous when available;
+- each statement's opening/closing balances must reconcile when available.
 
 Any blocking condition prevents export.
 

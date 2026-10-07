@@ -48,9 +48,17 @@ Withdrawals / Debits / Subtractions
 Date | Description | Amount
 ```
 
-Again, detection is based on layout and financial headings, not bank identity.
+### 3. Single Amount + running Balance layout
 
-Additional layout families can be added without changing the normalization, validation, or export layers.
+For statements structurally similar to:
+
+```text
+Date | Description | Amount | Balance
+```
+
+Debit/credit direction is accepted only when it is explicit (+/-, CR/DR) or mathematically proven by the running-balance movement.
+
+Detection is based on layout and financial headings, not bank identity. Additional layout families can be added without changing the normalization, validation, or export layers.
 
 ## What "any bank" means
 
@@ -91,6 +99,8 @@ The application must never:
 
 Unknown or unreconciled statements are blocked for review.
 
+Cross-statement validation also checks detected account identity, explicit currency, statement-period overlap/gaps, and adjacent opening/closing balance continuity. Numeric dates are interpreted as MM/DD or DD/MM only when the order can be inferred safely; ambiguous dates are not guessed.
+
 Money arithmetic uses `Decimal`, not binary floating point.
 
 ## Output workbook
@@ -121,3 +131,8 @@ As more representative statements arrive:
 - consider OCR for image-only/scanned PDFs.
 
 The goal is increasing layout coverage, not hardcoding individual banks.
+
+
+## Automated tests
+
+GitHub Actions runs the pytest suite on pushes to `main` and pull requests. Replit should still run `pytest -q` after syncing before a release is published.
