@@ -1,5 +1,9 @@
 # ConsolidatedState — Bank Statement Consolidator
 
+> **New to this project? Start with [UNDERSTANDING_THE_PROJECT.md](UNDERSTANDING_THE_PROJECT.md).**
+> It explains the original problem, the solution, architecture, data flow, important files,
+> parser strategies, validation, frontend, GitHub/Replit workflow, deployment, and the recommended code-reading order.
+
 A small web application that converts bank-statement PDFs into one validated consolidated report.
 
 ## Product goal
@@ -140,3 +144,22 @@ The goal is increasing layout coverage, not hardcoding individual banks.
 ## Automated tests
 
 GitHub Actions runs the pytest suite on pushes to `main` and pull requests. Replit should still run `pytest -q` after syncing before a release is published.
+
+
+## Family-use access
+
+For a published family-use Replit app, set an `APP_PASSCODE` secret in Replit.
+When that environment variable exists, the frontend requires the passcode before
+showing the statement uploader. Never commit the passcode to GitHub.
+
+This is a lightweight family-use gate, not enterprise identity management.
+
+## Replit publishing
+
+The app is already configured to run Streamlit on port 5000. After syncing
+`main`, installing dependencies, and passing `pytest -q`, use Replit's
+Publishing tool to publish the web app. The published user flow is simply:
+
+```text
+Open URL → enter family passcode → upload PDFs → process → review → download
+```
