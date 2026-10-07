@@ -47,10 +47,63 @@ def _parse_long_date(value: str) -> date | None:
     return None
 
 
+def _parse_numeric_date_pair(
+    first_text: str,
+    second_text: str,
+) -> tuple[date | None, date | None]:
+    numeric = re.compile(r"^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$")
+
+    first_match = numeric.fullmatch(first_text.strip())
+    second_match = numeric.fullmatch(second_text.strip())
+    if not first_match or not second_match:
+        return None, None
+
+    values = [
+        (int(first_match.group(1)), int(first_match.group(2))),
+        (int(second_match.group(1)), int(second_match.group(2))),
+    ]
+
+    evidence: set[str] = set()
+    for first_number, second_number in values:
+        if first_number > 12 and second_number <= 12:
+            evidence.add("DMY")
+        elif second_number > 12 and first_number <= 12:
+            evidence.add("MDY")
+
+    if len(evidence) != 1:
+        return None, None
+
+    order = next(iter(evidence))
+
+    def convert(match) -> date | None:
+        first_number = int(match.group(1))
+        second_number = int(match.group(2))
+        year_number = int(match.group(3))
+        if year_number < 100:
+            year_number += 2000
+
+        month = first_number if order == "MDY" else second_number
+        day = second_number if order == "MDY" else first_number
+
+        try:
+            return date(year_number, month, day)
+        except ValueError:
+            return None
+
+    return convert(first_match), convert(second_match)
+
+
 def _find_statement_period(layout: DocumentLayout) -> tuple[date | None, date | None]:
     long_date = re.compile(
         r"\b([A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4})\s+to\s+"
         r"([A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4})\b",
+        re.IGNORECASE,
+    )
+
+    numeric_range = re.compile(
+        r"\b(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})\s*"
+        r"(?:to|through|-)\s*"
+        r"(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})\b",
         re.IGNORECASE,
     )
 
@@ -76,12 +129,29 @@ def _find_statement_period(layout: DocumentLayout) -> tuple[date | None, date | 
                 if start and end:
                     return start, end
 
+            numeric_match = numeric_range.search(row.text)
+            if numeric_match and (
+                "statementperiod" in normalized
+                or "period" in normalized
+            ):
+                start, end = _parse_numeric_date_pair(
+                    numeric_match.group(1),
+                    numeric_match.group(2),
+                )
+                if start and end:
+                    return start, end
+
     return None, None
 
 
 def _find_account_fingerprint(layout: DocumentLayout) -> str | None:
     label = re.compile(
-        r"(?:account\s*(?:number|no\.?|#)|acct\s*(?:number|no\.?|#))"
+        r"(?:"
+        r"account\s*(?:number|no\.?|#)"
+        r"|acct\s*(?:number|no\.?|#)"
+        r"|account\s+ending\s+(?:in\s+)?"
+        r"|acct\s+ending\s+(?:in\s+)?"
+        r")"
         r"\s*[:#]?\s*([A-Za-z0-9Xx*• ]{4,40})",
         re.IGNORECASE,
     )
