@@ -254,7 +254,12 @@ class SectionedAmountStrategy:
                     continue
 
                 if current is not None:
-                    if normalized_line.startswith(("continued", "page")):
+                    if normalized_line.startswith("continued"):
+                        transactions.append(current)
+                        current = None
+                        continue
+
+                    if normalized_line.startswith("page"):
                         continue
 
                     continuation = " ".join(
