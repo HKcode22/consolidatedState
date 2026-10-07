@@ -20,7 +20,7 @@ from consolidated_state.export_excel import build_excel_report
 from consolidated_state.parser import UnsupportedStatementFormat, parse_statement
 from consolidated_state.pdf_inspect import inspect_and_extract_pdf
 from consolidated_state.readiness import export_is_safe
-from consolidated_state.validate import reconcile_statement
+from consolidated_state.validate import reconcile_statement, validate_transaction_rows
 
 st.set_page_config(page_title="ConsolidatedState", page_icon="📄", layout="wide")
 
@@ -123,6 +123,8 @@ if uploaded_files and st.button("Inspect and consolidate", type="primary"):
         st.subheader("2. Validation")
         st.dataframe(pd.DataFrame(validation_rows), use_container_width=True, hide_index=True)
         st.stop()
+
+    validation_rows.append(validate_transaction_rows(transaction_frame))
 
     duplicate_transactions = find_duplicate_transactions(transaction_frame)
     if not duplicate_transactions.empty:
