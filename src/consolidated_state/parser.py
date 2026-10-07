@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Protocol
 
 from .generic_parsers import (
@@ -8,6 +9,7 @@ from .generic_parsers import (
     SectionedAmountStrategy,
 )
 from .layout import DocumentLayout, extract_document_layout
+from .metadata import extract_statement_metadata
 from .models import ParseResult
 
 
@@ -27,6 +29,38 @@ PARSERS: list[ParserStrategy] = [
     LedgerColumnsStrategy(),
     SectionedAmountStrategy(),
 ]
+
+
+def _enrich_result(result: ParseResult, layout: DocumentLayout) -> ParseResult:
+    metadata = extract_statement_metadata(layout)
+
+    if metadata.statement_start and metadata.statement_end:
+        period = (
+            f"{metadata.statement_start.isoformat()} to "
+            f"{metadata.statement_end.isoformat()}"
+        )
+    else:
+        period = result.statement.statement_period
+
+    statement = replace(
+        result.statement,
+        statement_period=period,
+        statement_start=metadata.statement_start,
+        statement_end=metadata.statement_end,
+        account_fingerprint=metadata.account_fingerprint,
+        currency=metadata.currency,
+    )
+
+    transactions = [
+        replace(transaction, statement_period=period)
+        for transaction in result.transactions
+    ]
+
+    return ParseResult(
+        transactions=transactions,
+        statement=statement,
+        parser_name=result.parser_name,
+    )
 
 
 def parse_statement(
@@ -49,7 +83,10 @@ def parse_statement(
             continue
 
         try:
-            return parser.parse(layout, source_file)
+            return _enrich_result(
+                parser.parse(layout, source_file),
+                layout,
+            )
         except GenericParseError as exc:
             raise UnsupportedStatementFormat(str(exc)) from exc
 

@@ -81,6 +81,171 @@ def validate_transaction_rows(frame: pd.DataFrame) -> dict[str, object]:
     }
 
 
+def validate_statement_set(statements: list[StatementSummary]) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+
+    if not statements:
+        return rows
+
+    known_accounts = {
+        statement.account_fingerprint
+        for statement in statements
+        if statement.account_fingerprint
+    }
+    if len(known_accounts) > 1:
+        rows.append({
+            "source_file": "ALL",
+            "check": "account_consistency",
+            "status": "FAIL",
+            "detail": "Multiple account identities were detected. Consolidate one account at a time.",
+            "difference": None,
+        })
+    elif len(known_accounts) == 1 and all(statement.account_fingerprint for statement in statements):
+        rows.append({
+            "source_file": "ALL",
+            "check": "account_consistency",
+            "status": "PASS",
+            "detail": "All statements with detected account identifiers belong to the same account.",
+            "difference": None,
+        })
+    else:
+        rows.append({
+            "source_file": "ALL",
+            "check": "account_consistency",
+            "status": "WARNING",
+            "detail": "One or more statements did not expose a usable account identifier; account consistency could not be fully verified.",
+            "difference": None,
+        })
+
+    known_currencies = {
+        statement.currency
+        for statement in statements
+        if statement.currency
+    }
+    if len(known_currencies) > 1:
+        rows.append({
+            "source_file": "ALL",
+            "check": "currency_consistency",
+            "status": "FAIL",
+            "detail": "Multiple explicit currencies were detected. Cross-currency totals are not allowed.",
+            "difference": None,
+        })
+    elif len(known_currencies) == 1 and all(statement.currency for statement in statements):
+        currency = next(iter(known_currencies))
+        rows.append({
+            "source_file": "ALL",
+            "check": "currency_consistency",
+            "status": "PASS",
+            "detail": f"All statements explicitly identify currency {currency}.",
+            "difference": None,
+        })
+    else:
+        rows.append({
+            "source_file": "ALL",
+            "check": "currency_consistency",
+            "status": "WARNING",
+            "detail": "Currency was not explicitly identifiable on every statement. No currency conversion is performed.",
+            "difference": None,
+        })
+
+    dated = [
+        statement for statement in statements
+        if statement.statement_start and statement.statement_end
+    ]
+    if len(dated) < len(statements):
+        rows.append({
+            "source_file": "ALL",
+            "check": "statement_period_coverage",
+            "status": "WARNING",
+            "detail": "One or more exact statement periods could not be detected; coverage continuity is only partially verified.",
+            "difference": None,
+        })
+
+    if len(dated) >= 2:
+        ordered = sorted(dated, key=lambda statement: statement.statement_start)
+        overlap_files: list[str] = []
+        gap_messages: list[str] = []
+        continuity_failures: list[str] = []
+
+        for previous, current in zip(ordered, ordered[1:]):
+            assert previous.statement_end is not None
+            assert current.statement_start is not None
+
+            if current.statement_start <= previous.statement_end:
+                overlap_files.append(f"{previous.source_file} ↔ {current.source_file}")
+                continue
+
+            gap_days = (current.statement_start - previous.statement_end).days - 1
+            if gap_days > 0:
+                gap_messages.append(
+                    f"{previous.source_file} → {current.source_file}: {gap_days} uncovered day(s)"
+                )
+
+            if (
+                gap_days == 0
+                and previous.closing_balance is not None
+                and current.opening_balance is not None
+                and abs(previous.closing_balance - current.opening_balance) > CENT
+            ):
+                continuity_failures.append(
+                    f"{previous.source_file} closing balance does not match "
+                    f"{current.source_file} opening balance"
+                )
+
+        if overlap_files:
+            rows.append({
+                "source_file": "ALL",
+                "check": "statement_period_overlap",
+                "status": "NEEDS_REVIEW",
+                "detail": "Overlapping statement periods detected: " + "; ".join(overlap_files),
+                "difference": None,
+            })
+        else:
+            rows.append({
+                "source_file": "ALL",
+                "check": "statement_period_overlap",
+                "status": "PASS",
+                "detail": "No overlapping statement periods were detected.",
+                "difference": None,
+            })
+
+        if gap_messages:
+            rows.append({
+                "source_file": "ALL",
+                "check": "statement_period_gaps",
+                "status": "WARNING",
+                "detail": "Statement-period gaps detected: " + "; ".join(gap_messages),
+                "difference": None,
+            })
+        else:
+            rows.append({
+                "source_file": "ALL",
+                "check": "statement_period_gaps",
+                "status": "PASS",
+                "detail": "Detected statement periods are contiguous.",
+                "difference": None,
+            })
+
+        if continuity_failures:
+            rows.append({
+                "source_file": "ALL",
+                "check": "balance_continuity",
+                "status": "FAIL",
+                "detail": "; ".join(continuity_failures),
+                "difference": None,
+            })
+        else:
+            rows.append({
+                "source_file": "ALL",
+                "check": "balance_continuity",
+                "status": "PASS",
+                "detail": "Adjacent detected statements with available balances are continuous.",
+                "difference": None,
+            })
+
+    return rows
+
+
 def reconcile_statement(statement: StatementSummary, frame: pd.DataFrame) -> dict[str, object]:
     """Reconcile one statement when both opening and closing balances are known."""
     if statement.opening_balance is None or statement.closing_balance is None:

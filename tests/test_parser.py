@@ -29,6 +29,9 @@ def test_unknown_statement_is_refused_instead_of_guessed():
 def test_generic_ledger_layout_without_bank_name():
     data = _pdf_bytes(
         [
+            (40, 20, "Account # 1234"),
+            (40, 30, "Currency: USD"),
+            (40, 40, "Statement Period: From Date: 01-JAN-26 To Date 31-JAN-26"),
             (40, 70, "Date"),
             (150, 70, "Transaction Details"),
             (400, 70, "Debit"),
@@ -53,11 +56,16 @@ def test_generic_ledger_layout_without_bank_name():
     assert result.statement.closing_balance is not None
     assert str(result.statement.opening_balance) == "1000.00"
     assert str(result.statement.closing_balance) == "1095.00"
+    assert result.statement.statement_start.isoformat() == "2026-01-01"
+    assert result.statement.statement_end.isoformat() == "2026-01-31"
+    assert result.statement.account_fingerprint is not None
+    assert result.statement.currency == "USD"
 
 
 def test_generic_sectioned_layout_without_bank_name():
     data = _pdf_bytes(
         [
+            (40, 25, "Account # 9999 | January 1, 2026 to January 31, 2026"),
             (40, 50, "Beginning balance"),
             (500, 50, "$1,000.00"),
             (40, 90, "Deposits and other additions"),

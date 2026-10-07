@@ -8,7 +8,7 @@ from openpyxl import load_workbook
 from consolidated_state.consolidate import find_duplicate_transactions, monthly_summary, transactions_to_frame
 from consolidated_state.export_excel import build_excel_report
 from consolidated_state.models import StatementSummary, Transaction
-from consolidated_state.validate import reconcile_statement, validate_transaction_rows
+from consolidated_state.validate import reconcile_statement, validate_statement_set, validate_transaction_rows
 
 
 def sample_transactions():
@@ -87,11 +87,105 @@ def test_repeated_transaction_inside_one_statement_is_not_automatically_duplicat
     assert find_duplicate_transactions(frame).empty
 
 
+def test_statement_set_blocks_multiple_accounts_and_currencies():
+    statements = [
+        StatementSummary(
+            "a.pdf",
+            "2026-01-01 to 2026-01-31",
+            Decimal("100.00"),
+            Decimal("110.00"),
+            statement_start=date(2026, 1, 1),
+            statement_end=date(2026, 1, 31),
+            account_fingerprint="acct-a",
+            currency="USD",
+        ),
+        StatementSummary(
+            "b.pdf",
+            "2026-02-01 to 2026-02-28",
+            Decimal("110.00"),
+            Decimal("120.00"),
+            statement_start=date(2026, 2, 1),
+            statement_end=date(2026, 2, 28),
+            account_fingerprint="acct-b",
+            currency="EUR",
+        ),
+    ]
+    rows = validate_statement_set(statements)
+    statuses = {row["check"]: row["status"] for row in rows}
+    assert statuses["account_consistency"] == "FAIL"
+    assert statuses["currency_consistency"] == "FAIL"
+
+
+def test_statement_set_detects_overlap_and_balance_break():
+    statements = [
+        StatementSummary(
+            "a.pdf",
+            "2026-01-01 to 2026-01-31",
+            Decimal("100.00"),
+            Decimal("110.00"),
+            statement_start=date(2026, 1, 1),
+            statement_end=date(2026, 1, 31),
+            account_fingerprint="same",
+            currency="USD",
+        ),
+        StatementSummary(
+            "b.pdf",
+            "2026-01-31 to 2026-02-28",
+            Decimal("999.00"),
+            Decimal("120.00"),
+            statement_start=date(2026, 1, 31),
+            statement_end=date(2026, 2, 28),
+            account_fingerprint="same",
+            currency="USD",
+        ),
+    ]
+    rows = validate_statement_set(statements)
+    statuses = {row["check"]: row["status"] for row in rows}
+    assert statuses["statement_period_overlap"] == "NEEDS_REVIEW"
+
+
+def test_statement_set_detects_adjacent_balance_discontinuity():
+    statements = [
+        StatementSummary(
+            "a.pdf",
+            "2026-01-01 to 2026-01-31",
+            Decimal("100.00"),
+            Decimal("110.00"),
+            statement_start=date(2026, 1, 1),
+            statement_end=date(2026, 1, 31),
+            account_fingerprint="same",
+            currency="USD",
+        ),
+        StatementSummary(
+            "b.pdf",
+            "2026-02-01 to 2026-02-28",
+            Decimal("111.00"),
+            Decimal("120.00"),
+            statement_start=date(2026, 2, 1),
+            statement_end=date(2026, 2, 28),
+            account_fingerprint="same",
+            currency="USD",
+        ),
+    ]
+    rows = validate_statement_set(statements)
+    statuses = {row["check"]: row["status"] for row in rows}
+    assert statuses["balance_continuity"] == "FAIL"
+
+
 def test_excel_contains_expected_sheets():
     transactions = transactions_to_frame(sample_transactions())
     summary = monthly_summary(transactions)
     validation = pd.DataFrame([{"source_file": "jan.pdf", "check": "test", "status": "PASS", "detail": "ok", "difference": Decimal("0.00")}])
-    statement = StatementSummary("jan.pdf", "2026-01-02 to 2026-01-03", Decimal("1000.00"), Decimal("1095.00"))
+    statement = StatementSummary(
+        "jan.pdf",
+        "2026-01-01 to 2026-01-31",
+        Decimal("1000.00"),
+        Decimal("1095.00"),
+        statement_start=date(2026, 1, 1),
+        statement_end=date(2026, 1, 31),
+        account_fingerprint="same",
+        currency="USD",
+    )
     data = build_excel_report(transactions, summary, validation, [statement])
     workbook = load_workbook(BytesIO(data))
     assert workbook.sheetnames == [
@@ -108,6 +202,8 @@ def test_excel_contains_expected_sheets():
         overview.cell(row=row, column=1).value: overview.cell(row=row, column=2).value
         for row in range(2, overview.max_row + 1)
     }
+    assert metrics["Currency"] == "USD"
+    assert metrics["Covered period"] == "2026-01-01 to 2026-01-31"
     assert metrics["Deposits / additions count"] == 1
     assert metrics["Withdrawals / subtractions count"] == 1
     assert metrics["Ending balance"] == 1095

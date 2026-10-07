@@ -20,7 +20,7 @@ from consolidated_state.export_excel import build_excel_report
 from consolidated_state.parser import UnsupportedStatementFormat, parse_statement
 from consolidated_state.pdf_inspect import inspect_and_extract_pdf
 from consolidated_state.readiness import export_is_safe
-from consolidated_state.validate import reconcile_statement, validate_transaction_rows
+from consolidated_state.validate import reconcile_statement, validate_statement_set, validate_transaction_rows
 
 st.set_page_config(page_title="ConsolidatedState", page_icon="📄", layout="wide")
 
@@ -28,14 +28,14 @@ st.title("Bank Statement Consolidator")
 st.caption("Upload monthly statements, validate them, and create one consolidated Excel report.")
 st.info(
     "Privacy: this app does not intentionally save uploaded statement files. "
-    "Financial rows are extracted only by a verified bank-specific parser; unknown layouts are never guessed."
+    "Financial rows are extracted by verified generic layout strategies; unknown layouts are never guessed."
 )
 
 uploaded_files = st.file_uploader(
     "Upload 1–12 bank statement PDFs",
     type=["pdf"],
     accept_multiple_files=True,
-    help="For the first MVP, all statements should come from the same supported bank/account layout.",
+    help="Statements may come from different banks/layouts, but one consolidation should represent the same account and currency.",
 )
 
 if uploaded_files and len(uploaded_files) > 12:
@@ -104,7 +104,7 @@ if uploaded_files and st.button("Inspect and consolidate", type="primary"):
                 {
                     "source_file": uploaded.name,
                     "check": "parser",
-                    "status": "NEEDS_BANK_PARSER",
+                    "status": "NEEDS_LAYOUT_STRATEGY",
                     "detail": str(exc),
                     "difference": None,
                 }
@@ -117,14 +117,15 @@ if uploaded_files and st.button("Inspect and consolidate", type="primary"):
     transaction_frame = transactions_to_frame(all_transactions)
     if transaction_frame.empty:
         st.warning(
-            "The PDF intake layer is working, but no verified bank parser is installed yet. "
-            "Send 2–3 representative statements and we can implement the exact parser without guessing financial data."
+            "The PDF intake layer is working, but none of the current generic layout strategies safely parsed these statement(s). "
+            "A new structural strategy can be added without hardcoding the bank name."
         )
         st.subheader("2. Validation")
         st.dataframe(pd.DataFrame(validation_rows), use_container_width=True, hide_index=True)
         st.stop()
 
     validation_rows.append(validate_transaction_rows(transaction_frame))
+    validation_rows.extend(validate_statement_set(statement_summaries))
 
     duplicate_transactions = find_duplicate_transactions(transaction_frame)
     if not duplicate_transactions.empty:

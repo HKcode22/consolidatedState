@@ -31,11 +31,33 @@ def _overview(
     total_credits = _sum_money(credits["credit"]) if not credits.empty else Decimal("0.00")
     total_debits = _sum_money(debits["debit"]) if not debits.empty else Decimal("0.00")
 
-    if transactions.empty:
+    dated_statements = [
+        statement
+        for statement in statements
+        if statement.statement_start and statement.statement_end
+    ]
+    if dated_statements:
+        covered_period = (
+            f"{min(statement.statement_start for statement in dated_statements).isoformat()} to "
+            f"{max(statement.statement_end for statement in dated_statements).isoformat()}"
+        )
+    elif transactions.empty:
         covered_period = ""
     else:
         dates = pd.to_datetime(transactions["date"])
         covered_period = f"{dates.min().date().isoformat()} to {dates.max().date().isoformat()}"
+
+    currencies = {
+        statement.currency
+        for statement in statements
+        if statement.currency
+    }
+    if len(currencies) == 1:
+        currency = next(iter(currencies))
+    elif len(currencies) > 1:
+        currency = "MIXED"
+    else:
+        currency = "Not explicitly identified"
 
     ordered_statements = sorted(
         statements,
@@ -60,6 +82,7 @@ def _overview(
 
     rows = [
         ("Covered period", covered_period),
+        ("Currency", currency),
         ("Source statements", len(statements)),
         ("Total transactions", len(transactions)),
         ("Deposits / additions count", len(credits)),

@@ -22,6 +22,10 @@ class StatementSummary:
     statement_period: str = ""
     opening_balance: Decimal | None = None
     closing_balance: Decimal | None = None
+    statement_start: date | None = None
+    statement_end: date | None = None
+    account_fingerprint: str | None = None
+    currency: str | None = None
 
 
 @dataclass(frozen=True)
