@@ -2,6 +2,8 @@
 
 This is the **read-this-first technical guide** for the project.
 
+For a much more detailed line-by-line explanation of the Python code, read **CODE_WALKTHROUGH_PDF_TO_REPORT.md** after this file.
+
 If you are confused about what problem we are solving, why the architecture looks the way it does, how the code flows, why we are not using an LLM, or which files matter, start here.
 
 ---

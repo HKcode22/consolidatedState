@@ -1,8 +1,10 @@
 # ConsolidatedState — Bank Statement Consolidator
 
 > **New to this project? Start with [UNDERSTANDING_THE_PROJECT.md](UNDERSTANDING_THE_PROJECT.md).**
-> It explains the original problem, the solution, architecture, data flow, important files,
-> parser strategies, validation, frontend, GitHub/Replit workflow, deployment, and the recommended code-reading order.
+> It explains the original problem, solution, architecture, and project-level mental model.
+>
+> **Confused by the Python itself? Read [CODE_WALKTHROUGH_PDF_TO_REPORT.md](CODE_WALKTHROUGH_PDF_TO_REPORT.md).**
+> It walks through the current code in depth: uploaded bytes, PyMuPDF `get_text()`, geometry, nested data structures, regex groups, parser classes, loops, validation, memory, and the complete PDF-to-report execution path.
 
 A small web application that converts bank-statement PDFs into one validated consolidated report.
 
