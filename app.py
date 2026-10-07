@@ -19,6 +19,7 @@ from consolidated_state.consolidate import (
 from consolidated_state.export_excel import build_excel_report
 from consolidated_state.parser import UnsupportedStatementFormat, parse_statement
 from consolidated_state.pdf_inspect import inspect_and_extract_pdf
+from consolidated_state.readiness import export_is_safe
 from consolidated_state.validate import reconcile_statement
 
 st.set_page_config(page_title="ConsolidatedState", page_icon="📄", layout="wide")
@@ -47,6 +48,7 @@ if uploaded_files and st.button("Inspect and consolidate", type="primary"):
     statement_summaries = []
     validation_rows: list[dict[str, object]] = []
     seen_hashes: dict[str, str] = {}
+    parsed_files: set[str] = set()
 
     for uploaded in uploaded_files:
         pdf_bytes = uploaded.getvalue()
@@ -56,15 +58,29 @@ if uploaded_files and st.button("Inspect and consolidate", type="primary"):
         if duplicate_of is None:
             seen_hashes[inspection.sha256] = uploaded.name
 
-        row = {
-            "source_file": inspection.source_file,
-            "pages": inspection.page_count,
-            "size_mb": round(inspection.size_bytes / (1024 * 1024), 2),
-            "embedded_text": inspection.has_text,
-            "status": "DUPLICATE_FILE" if duplicate_of else inspection.status,
-            "detail": f"Exact duplicate of {duplicate_of}." if duplicate_of else inspection.detail,
-        }
-        inspections.append(row)
+        intake_status = "DUPLICATE_FILE" if duplicate_of else inspection.status
+        intake_detail = f"Exact duplicate of {duplicate_of}." if duplicate_of else inspection.detail
+
+        inspections.append(
+            {
+                "source_file": inspection.source_file,
+                "pages": inspection.page_count,
+                "size_mb": round(inspection.size_bytes / (1024 * 1024), 2),
+                "embedded_text": inspection.has_text,
+                "status": intake_status,
+                "detail": intake_detail,
+            }
+        )
+
+        validation_rows.append(
+            {
+                "source_file": uploaded.name,
+                "check": "pdf_intake",
+                "status": "PASS" if intake_status == "TEXT_READY" else intake_status,
+                "detail": intake_detail,
+                "difference": None,
+            }
+        )
 
         if duplicate_of or inspection.status != "TEXT_READY":
             continue
@@ -73,6 +89,7 @@ if uploaded_files and st.button("Inspect and consolidate", type="primary"):
             parsed = parse_statement(text, uploaded.name)
             all_transactions.extend(parsed.transactions)
             statement_summaries.append(parsed.statement)
+            parsed_files.add(uploaded.name)
             validation_rows.append(
                 {
                     "source_file": uploaded.name,
@@ -103,9 +120,8 @@ if uploaded_files and st.button("Inspect and consolidate", type="primary"):
             "The PDF intake layer is working, but no verified bank parser is installed yet. "
             "Send 2–3 representative statements and we can implement the exact parser without guessing financial data."
         )
-        if validation_rows:
-            st.subheader("2. Parser status")
-            st.dataframe(pd.DataFrame(validation_rows), use_container_width=True, hide_index=True)
+        st.subheader("2. Validation")
+        st.dataframe(pd.DataFrame(validation_rows), use_container_width=True, hide_index=True)
         st.stop()
 
     duplicate_transactions = find_duplicate_transactions(transaction_frame)
@@ -135,11 +151,21 @@ if uploaded_files and st.button("Inspect and consolidate", type="primary"):
     st.subheader("4. Monthly summary")
     st.dataframe(summary_frame, use_container_width=True, hide_index=True)
 
-    has_failure = validation_frame["status"].isin(["FAIL", "NEEDS_REVIEW", "NEEDS_BANK_PARSER"]).any()
-    if has_failure:
-        st.warning("Review validation warnings before relying on the exported totals.")
+    safe_to_export, blocking_reasons = export_is_safe(
+        validation_frame,
+        uploaded_file_count=len(uploaded_files),
+        parsed_file_count=len(parsed_files),
+    )
+
+    if not safe_to_export:
+        st.error("Export blocked. Every uploaded statement must pass validation before a consolidated report is created.")
+        with st.expander("Why export is blocked"):
+            for reason in blocking_reasons:
+                st.write(f"- {reason}")
+        st.stop()
 
     report = build_excel_report(transaction_frame, summary_frame, validation_frame)
+    st.success("All uploaded statements passed the current validation gates.")
     st.download_button(
         "Download consolidated Excel report",
         data=report,
