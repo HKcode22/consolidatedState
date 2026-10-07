@@ -6,6 +6,9 @@
 > **Confused by the Python itself? Read [CODE_WALKTHROUGH_PDF_TO_REPORT.md](CODE_WALKTHROUGH_PDF_TO_REPORT.md).**
 > It walks through the current code in depth: uploaded bytes, PyMuPDF `get_text()`, geometry, nested data structures, regex groups, parser classes, loops, validation, memory, and the complete PDF-to-report execution path.
 
+> **Losing track when functions jump between files? Read [CODE_EXECUTION_MAP_STEP_BY_STEP.md](CODE_EXECUTION_MAP_STEP_BY_STEP.md).**
+> It follows the repository in strict execution order and shows exactly what each important block receives, does, returns, and calls next.
+
 A small web application that converts bank-statement PDFs into one validated consolidated report.
 
 ## Product goal

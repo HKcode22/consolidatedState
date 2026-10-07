@@ -3,6 +3,8 @@
 
 This is the second learning guide for ConsolidatedState.
 
+If your main problem is losing track when code jumps between files, read CODE_EXECUTION_MAP_STEP_BY_STEP.md after this guide. It follows the runtime path in strict order.
+
 The first guide, UNDERSTANDING_THE_PROJECT.md, explains the product and architecture.
 
 This guide explains the CODE itself in much greater depth.
