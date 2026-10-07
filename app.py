@@ -86,7 +86,7 @@ if uploaded_files and st.button("Inspect and consolidate", type="primary"):
             continue
 
         try:
-            parsed = parse_statement(text, uploaded.name)
+            parsed = parse_statement(text, uploaded.name, pdf_bytes=pdf_bytes)
             all_transactions.extend(parsed.transactions)
             statement_summaries.append(parsed.statement)
             parsed_files.add(uploaded.name)

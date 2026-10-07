@@ -15,10 +15,6 @@ class Transaction:
     source_file: str = ""
     statement_period: str = ""
 
-    @property
-    def net(self) -> Decimal:
-        return (self.credit or Decimal("0")) - (self.debit or Decimal("0"))
-
 
 @dataclass(frozen=True)
 class StatementSummary:
@@ -26,6 +22,13 @@ class StatementSummary:
     statement_period: str = ""
     opening_balance: Decimal | None = None
     closing_balance: Decimal | None = None
+
+
+@dataclass(frozen=True)
+class ParseResult:
+    transactions: list[Transaction]
+    statement: StatementSummary
+    parser_name: str
 
 
 @dataclass(frozen=True)

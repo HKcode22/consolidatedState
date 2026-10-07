@@ -1,43 +1,95 @@
 # Architecture
 
-## Decision
+## Core decision
 
-Use one Streamlit application for the MVP.
+Use a bank-agnostic, strategy-based parser.
 
 ```text
 Browser
   |
-  | HTTPS
   v
-Streamlit app on Replit
-  |-- upload + review UI
-  |-- PDF inspection/extraction
-  |-- bank parser adapter
-  |-- normalization
-  |-- validation/reconciliation
-  `-- Excel generation
+Streamlit app
+  |
+  +-- PDF preflight
+  |     +-- duplicate?
+  |     +-- encrypted?
+  |     +-- embedded text?
+  |     +-- OCR required?
+  |
+  +-- coordinate-aware PDF layout extraction
+  |
+  +-- strategy detector
+  |     +-- running ledger
+  |     +-- sectioned activity
+  |     +-- future layout families
+  |
+  +-- normalized transactions
+  |
+  +-- deterministic validation/reconciliation
+  |
+  +-- monthly consolidation
+  |
+  `-- Excel export
 ```
 
-There is no database in v1 and no need for a separate React frontend or REST API.
+## The parser is not selected by bank name
 
-## Internal modules
+A statement from any bank can use a familiar structural family. The parser registry therefore answers:
 
-- `app.py` — user workflow only
-- `pdf_inspect.py` — PDF validation, hashing, text extraction
-- `models.py` — typed statement/transaction records
-- `parser.py` — parser interface and supported-bank adapters
-- `consolidate.py` — dataframe normalization and summaries
-- `validate.py` — duplicate and reconciliation checks
-- `export_excel.py` — deterministic workbook generation
+> What kind of table is this?
 
-## Trust boundaries
+rather than:
 
-PDF bytes enter through the upload widget and should remain in memory. The application should not log statement text, account numbers, transaction descriptions, or balances. GitHub contains code only. Replit contains runtime code/configuration only.
+> Which bank made this?
 
-## Why not Firebase for v1?
+This is what lets new banks work automatically when their layout matches an existing strategy.
 
-Firebase would require us to design a frontend/backend split and potentially a persistence/auth layer that the consolidation problem does not need. Streamlit gives us the upload UI and Python execution in one app, which minimizes code and failure points.
+## Why PDF coordinates matter
 
-## Why not AI-first extraction?
+Plain extracted text often loses table relationships. A PDF may return all dates first, then all amounts, even though the page visually contains rows.
 
-A bank statement is structured financial data. Exact amounts and arithmetic should be parsed and validated deterministically. AI can be considered later for layout mapping or description categorization, but it should not be trusted as the source of financial values.
+PyMuPDF exposes each word with its x/y coordinates. The parser can therefore reconstruct:
+
+- row alignment;
+- debit/credit/balance columns;
+- right-aligned amount columns;
+- continuation descriptions;
+- repeated table headers.
+
+This is much safer than trying to infer transaction rows from a flat text string.
+
+## Generic strategy interface
+
+Each strategy has two responsibilities:
+
+1. `matches(layout)` — determine whether the structural family is present.
+2. `parse(layout)` — create normalized transactions.
+
+Strategies never decide whether the final report is trustworthy. The validation layer does that independently.
+
+## Validation boundary
+
+A successful parse is necessary but not sufficient.
+
+Before export:
+
+- every uploaded file must parse;
+- normalized transaction rows must pass structural checks;
+- potential duplicates must be reviewed;
+- opening/closing balances must reconcile when available.
+
+Any blocking condition prevents export.
+
+## Expansion path
+
+New statement examples are first tested against existing strategies. Only genuinely new structural families add parser code.
+
+This keeps the project extensible without a bank-by-bank hardcoded design.
+
+## OCR
+
+Image-only PDFs are a separate extraction problem. The current preflight detects them and blocks export. A future free OCR stage can feed recognized words/coordinates into the same strategy architecture.
+
+## LLM decision
+
+An LLM is intentionally not part of the financial extraction path. Exact amounts and debit/credit direction are determined from document structure and verified mathematically. An LLM could be added later for optional description categorization, but not as the authority for financial values.

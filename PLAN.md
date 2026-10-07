@@ -1,89 +1,103 @@
-# MVP Build Plan
+# Build Plan
 
 ## Target
 
-A small, reliable family-use web app. The first usable version should be achievable in a short build session once sample statements are available.
+A small, reliable web application that consolidates bank-statement transactions without being tied to one bank.
 
 ## Definition of done
 
-1. Dad opens the web app.
-2. Uploads 1–12 PDF statements from the supported bank.
-3. The app rejects unreadable/duplicate/unsupported files instead of guessing.
-4. Transactions are normalized into date, description, debit, credit, balance, source file, and statement period.
-5. Validation checks run before export.
-6. Dad previews the result and downloads one Excel workbook.
+1. User opens the web app.
+2. Uploads 1–12 PDF statements intended for one consolidation.
+3. The app inspects each PDF and determines whether text/layout data are available.
+4. A generic structural parser recognizes the statement layout.
+5. Transactions normalize to date, description, debit, credit, balance, source file, and statement period.
+6. Validation runs before export.
+7. Any failed/ambiguous statement blocks export.
+8. User previews the result and downloads one consolidated workbook.
 
-## Phase 1 — Clean foundation
+## Phase 1 — Foundation — COMPLETE
 
 - GitHub is the source of truth.
 - Replit is the runtime/deployment environment.
-- Single Python/Streamlit app; no separate frontend/backend for v1.
-- Add `.gitignore` protections for PDFs, spreadsheets, secrets, and generated output.
-- Add automated synthetic tests.
+- Single Python/Streamlit application.
+- Privacy-focused gitignore.
+- Synthetic automated tests.
 
-## Phase 2 — Safe PDF intake
+## Phase 2 — Safe PDF intake — COMPLETE
 
-- Upload 1–12 PDFs.
-- Enforce file count and reasonable size limits.
-- Compute SHA-256 hashes in memory to detect identical duplicate uploads.
-- Detect encrypted/password-protected PDFs.
-- Count pages and determine whether embedded text exists.
-- Do not persist PDF contents.
+- 1–12 PDFs.
+- 20 MB per-file limit.
+- SHA-256 duplicate detection.
+- Encrypted/password-protected PDF detection.
+- Embedded-text vs OCR-required detection.
+- In-memory processing.
 
-## Phase 3 — Learn one real bank format
+## Phase 3 — Bank-agnostic layout engine — IN PROGRESS
 
-Requires 2–3 representative statements.
+The parser chooses a strategy from document structure rather than a bank name.
 
-- Identify statement period and year.
-- Identify opening and closing balances.
-- Identify transaction row structure.
-- Determine debit/credit/balance semantics.
-- Determine whether multi-line descriptions occur.
-- Determine whether scanned PDFs require OCR.
+Initial layout families:
 
-## Phase 4 — Bank-specific parser
+- running ledger: Date / Details / Debit / Credit / Balance
+- sectioned activity: Deposits/Credits and Withdrawals/Debits, each with Date / Description / Amount
 
-- Parse only a recognized layout.
-- Normalize fields into a single transaction schema.
-- Preserve source filename and statement period for traceability.
-- Reject ambiguous rows; never infer financial values silently.
+New examples are used to discover **new layout families**, not to hardcode bank brands.
 
-## Phase 5 — Validation and reconciliation
+## Phase 4 — Normalization and validation
 
-- Exact duplicate file detection.
+- Exact Decimal arithmetic.
+- Every row must have a date, description, source, and exactly one debit/credit side.
 - Duplicate/overlapping transaction detection.
-- Statement-period ordering and missing-period warnings.
-- Opening + credits - debits ≈ closing balance when the source statement exposes those values.
-- Flag parsing/reconciliation failures before export.
+- Opening + credits - debits = closing balance where balances are available.
+- Fail-closed export: one failed input blocks the consolidated workbook.
 
-## Phase 6 — Consolidation and export
+## Phase 5 — Consolidation
 
 - Combine transactions chronologically.
-- Create monthly totals.
-- Preview transactions and warnings in the web app.
-- Generate one `.xlsx` file with Transactions, Monthly Summary, Validation, and About sheets.
+- Monthly debit/credit/net summaries.
+- Preserve source file and statement period.
+- Validation report accompanies output.
 
-## Phase 7 — Handoff
+## Phase 6 — Broader format coverage
 
-- Run end-to-end tests with redacted copies.
-- Deploy on Replit.
-- Dad uses one URL: Upload → Process → Review → Download.
+As new samples arrive:
 
-## Not in the 2–4 hour MVP
+1. run them through existing strategies;
+2. if a strategy succeeds and reconciles, no new parser is needed;
+3. if not, identify the structural difference;
+4. add a new generic layout strategy plus synthetic regression tests.
 
-- Universal support for arbitrary banks.
-- Training a custom AI/ML model.
-- LLM calls containing real financial statements.
-- User accounts or a database.
-- Permanent statement storage.
-- Reproducing an official bank statement design.
+Likely future strategy families:
 
-## Later enhancements
+- signed Amount + Balance ledgers;
+- separate Money In / Money Out columns;
+- multi-page tables with repeated headers;
+- non-English heading dictionaries.
 
-Only if useful after v1 works:
+## Phase 7 — OCR
 
-- Multiple bank adapters.
-- OCR for scanned statements.
-- Optional merchant/category classification.
-- Password/family-only access.
-- PDF summary report in addition to Excel.
+For scanned/image-only statements:
+
+- detect OCR requirement automatically;
+- add a free local OCR path;
+- run the same layout/validation pipeline on OCR output;
+- do not use an LLM to invent missing financial values.
+
+## Phase 8 — Handoff
+
+- end-to-end tests on representative redacted samples;
+- restrict access appropriately;
+- publish on Replit;
+- user flow: Upload → Process → Review → Download.
+
+## Important limitation
+
+"Any bank" is a coverage goal, not an honest absolute guarantee. Arbitrary PDFs can contain unseen layouts, scans, malformed fonts, languages, and incomplete information.
+
+The software therefore prefers:
+
+**unsupported + review**
+
+over:
+
+**plausible-looking but incorrect financial output**.

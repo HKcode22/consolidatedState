@@ -1,39 +1,59 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Protocol
 
-from .models import StatementSummary, Transaction
+from .generic_parsers import (
+    GenericParseError,
+    LedgerColumnsStrategy,
+    SectionedAmountStrategy,
+)
+from .layout import DocumentLayout, extract_document_layout
+from .models import ParseResult
 
 
 class UnsupportedStatementFormat(ValueError):
-    """Raised when no verified parser recognizes a statement layout."""
+    """Raised when no verified generic layout strategy recognizes a statement."""
 
 
-@dataclass(frozen=True)
-class ParseResult:
-    transactions: list[Transaction]
-    statement: StatementSummary
-    parser_name: str
-
-
-class ParserAdapter(Protocol):
+class ParserStrategy(Protocol):
     name: str
 
-    def matches(self, text: str) -> bool: ...
+    def matches(self, layout: DocumentLayout) -> bool: ...
 
-    def parse(self, text: str, source_file: str) -> ParseResult: ...
-
-
-# Verified bank adapters are added here only after representative statements are reviewed.
-PARSERS: list[ParserAdapter] = []
+    def parse(self, layout: DocumentLayout, source_file: str) -> ParseResult: ...
 
 
-def parse_statement(text: str, source_file: str) -> ParseResult:
+PARSERS: list[ParserStrategy] = [
+    LedgerColumnsStrategy(),
+    SectionedAmountStrategy(),
+]
+
+
+def parse_statement(
+    text: str,
+    source_file: str,
+    pdf_bytes: bytes | None = None,
+) -> ParseResult:
+    del text  # Layout strategies intentionally rely on PDF geometry, not bank names.
+
+    if not pdf_bytes:
+        raise UnsupportedStatementFormat(
+            "Layout-aware parsing requires the source PDF bytes. "
+            "No financial data was guessed."
+        )
+
+    layout = extract_document_layout(pdf_bytes)
+
     for parser in PARSERS:
-        if parser.matches(text):
-            return parser.parse(text, source_file)
+        if not parser.matches(layout):
+            continue
+
+        try:
+            return parser.parse(layout, source_file)
+        except GenericParseError as exc:
+            raise UnsupportedStatementFormat(str(exc)) from exc
+
     raise UnsupportedStatementFormat(
-        "No verified bank-specific parser matches this statement yet. "
-        "Provide representative statement samples before financial rows are extracted."
+        "No verified generic layout strategy matches this statement yet. "
+        "The document was left unparsed rather than guessing financial data."
     )
