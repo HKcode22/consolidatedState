@@ -40,10 +40,27 @@ def transactions_to_frame(transactions: Iterable[Transaction]) -> pd.DataFrame:
 
 
 def find_duplicate_transactions(frame: pd.DataFrame) -> pd.DataFrame:
+    """Return likely overlap duplicates that appear in more than one source statement.
+
+    Repeated transactions inside the same statement are not automatically duplicates:
+    two legitimate purchases or bill payments can share the same date, description,
+    and amount. Exact duplicate PDF uploads are handled separately by SHA-256.
+    """
     if frame.empty:
         return frame.copy()
-    key = ["date", "description", "debit", "credit"]
-    return frame[frame.duplicated(key, keep=False)].copy()
+
+    key = ["date", "description", "debit", "credit", "balance"]
+    candidates = frame[frame.duplicated(key, keep=False)].copy()
+
+    if candidates.empty:
+        return candidates
+
+    keep_indexes: list[int] = []
+    for _, group in candidates.groupby(key, dropna=False, sort=False):
+        if group["source_file"].nunique(dropna=False) > 1:
+            keep_indexes.extend(group.index.tolist())
+
+    return candidates.loc[keep_indexes].copy() if keep_indexes else candidates.iloc[0:0].copy()
 
 
 def _money_or_zero(value: object) -> Decimal:

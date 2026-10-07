@@ -73,10 +73,18 @@ def test_transaction_integrity_rejects_negative_amount():
     assert "negative_amount=1" in result["detail"]
 
 
-def test_duplicate_detection():
-    tx = Transaction(date(2026, 1, 2), "Same", debit=Decimal("10.00"), source_file="a.pdf")
-    frame = transactions_to_frame([tx, tx])
+def test_duplicate_detection_across_source_statements():
+    first = Transaction(date(2026, 1, 2), "Same", debit=Decimal("10.00"), source_file="a.pdf")
+    second = Transaction(date(2026, 1, 2), "Same", debit=Decimal("10.00"), source_file="b.pdf")
+    frame = transactions_to_frame([first, second])
     assert len(find_duplicate_transactions(frame)) == 2
+
+
+def test_repeated_transaction_inside_one_statement_is_not_automatically_duplicate():
+    first = Transaction(date(2026, 1, 2), "Same", debit=Decimal("10.00"), balance=Decimal("90.00"), source_file="a.pdf")
+    second = Transaction(date(2026, 1, 2), "Same", debit=Decimal("10.00"), balance=Decimal("80.00"), source_file="a.pdf")
+    frame = transactions_to_frame([first, second])
+    assert find_duplicate_transactions(frame).empty
 
 
 def test_excel_contains_expected_sheets():
