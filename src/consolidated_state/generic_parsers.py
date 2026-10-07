@@ -6,6 +6,7 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from .layout import DocumentLayout, LayoutRow, LayoutWord
+from .metadata import extract_statement_metadata
 from .models import ParseResult, StatementSummary, Transaction
 
 
@@ -17,12 +18,125 @@ def normalize(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", value.lower())
 
 
-def parse_date(value: str) -> date | None:
-    for fmt in ("%d-%b-%y", "%d-%b-%Y", "%m/%d/%y", "%m/%d/%Y"):
+NUMERIC_DATE = re.compile(r"^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})$")
+
+
+def _looks_like_date_token(value: str) -> bool:
+    if NUMERIC_DATE.fullmatch(value.strip()):
+        return True
+
+    for fmt in ("%d-%b-%y", "%d-%b-%Y", "%Y-%m-%d"):
+        try:
+            datetime.strptime(value, fmt)
+            return True
+        except ValueError:
+            continue
+
+    return False
+
+
+def parse_date(
+    value: str,
+    numeric_order: str | None = None,
+) -> date | None:
+    for fmt in ("%d-%b-%y", "%d-%b-%Y", "%Y-%m-%d"):
         try:
             return datetime.strptime(value, fmt).date()
         except ValueError:
             continue
+
+    match = NUMERIC_DATE.fullmatch(value.strip())
+    if not match:
+        return None
+
+    first, second, year_text = match.groups()
+    first_number = int(first)
+    second_number = int(second)
+    year_number = int(year_text)
+    if year_number < 100:
+        year_number += 2000
+
+    if first_number > 12 and second_number <= 12:
+        order = "DMY"
+    elif second_number > 12 and first_number <= 12:
+        order = "MDY"
+    else:
+        order = numeric_order
+
+    if order not in {"MDY", "DMY"}:
+        return None
+
+    month = first_number if order == "MDY" else second_number
+    day = second_number if order == "MDY" else first_number
+
+    try:
+        return date(year_number, month, day)
+    except ValueError:
+        return None
+
+
+def infer_numeric_date_order(layout: DocumentLayout) -> str | None:
+    evidence: set[str] = set()
+    ambiguous_tokens: list[str] = []
+
+    for page in layout.pages:
+        for row in page.rows:
+            for word in row.words:
+                match = NUMERIC_DATE.fullmatch(word.text.strip())
+                if not match:
+                    continue
+
+                first_number = int(match.group(1))
+                second_number = int(match.group(2))
+
+                if first_number > 12 and second_number <= 12:
+                    evidence.add("DMY")
+                elif second_number > 12 and first_number <= 12:
+                    evidence.add("MDY")
+                elif first_number <= 12 and second_number <= 12:
+                    ambiguous_tokens.append(word.text.strip())
+
+    if len(evidence) > 1:
+        raise GenericParseError(
+            "Conflicting numeric date conventions were detected in the same statement."
+        )
+
+    if len(evidence) == 1:
+        return next(iter(evidence))
+
+    metadata = extract_statement_metadata(layout)
+    if (
+        metadata.statement_start is None
+        or metadata.statement_end is None
+        or not ambiguous_tokens
+    ):
+        return None
+
+    period_start = metadata.statement_start
+    period_end = metadata.statement_end
+    period_evidence: set[str] = set()
+
+    for token in ambiguous_tokens:
+        mdy = parse_date(token, "MDY")
+        dmy = parse_date(token, "DMY")
+
+        mdy_inside = (
+            mdy is not None
+            and period_start <= mdy <= period_end
+        )
+        dmy_inside = (
+            dmy is not None
+            and period_start <= dmy <= period_end
+        )
+
+        if mdy_inside and not dmy_inside:
+            period_evidence.add("MDY")
+        elif dmy_inside and not mdy_inside:
+            period_evidence.add("DMY")
+
+    if len(period_evidence) == 1:
+        return next(iter(period_evidence))
+
     return None
 
 
@@ -150,7 +264,7 @@ class SectionedAmountStrategy:
 
                 if (
                     section_direction(row.text) is not None
-                    and not any(parse_date(word.text) for word in row.words)
+                    and not any(_looks_like_date_token(word.text) for word in row.words)
                     and len(row.words) <= 8
                 ):
                     has_section = True
@@ -161,6 +275,7 @@ class SectionedAmountStrategy:
         transactions: list[Transaction] = []
         direction: str | None = None
         current: Transaction | None = None
+        date_order = infer_numeric_date_order(layout)
 
         for page in layout.pages:
             description_x = page.width * 0.15
@@ -176,7 +291,7 @@ class SectionedAmountStrategy:
                     continue
 
                 possible_direction = section_direction(row.text)
-                contains_date = any(parse_date(word.text) for word in row.words)
+                contains_date = any(_looks_like_date_token(word.text) for word in row.words)
 
                 if possible_direction and not contains_date and len(row.words) <= 8:
                     if current is not None:
@@ -210,7 +325,7 @@ class SectionedAmountStrategy:
 
                 date_words = [
                     word for word in row.words
-                    if parse_date(word.text) is not None
+                    if parse_date(word.text, date_order) is not None
                 ]
 
                 if date_words and direction:
@@ -218,7 +333,7 @@ class SectionedAmountStrategy:
                         transactions.append(current)
 
                     date_word = min(date_words, key=lambda word: word.x0)
-                    transaction_date = parse_date(date_word.text)
+                    transaction_date = parse_date(date_word.text, date_order)
                     assert transaction_date is not None
 
                     amount_words = [
@@ -394,6 +509,7 @@ class LedgerColumnsStrategy:
 
     def parse(self, layout: DocumentLayout, source_file: str) -> ParseResult:
         transactions: list[Transaction] = []
+        date_order = infer_numeric_date_order(layout)
 
         for page in layout.pages:
             header_index = None
@@ -442,7 +558,7 @@ class LedgerColumnsStrategy:
                 date_words = [
                     word
                     for word in row.words
-                    if parse_date(word.text) is not None and word.x0 < detail_x
+                    if parse_date(word.text, date_order) is not None and word.x0 < detail_x
                 ]
 
                 if date_words:
@@ -450,7 +566,7 @@ class LedgerColumnsStrategy:
                         transactions.append(current)
 
                     date_word = min(date_words, key=lambda word: word.x0)
-                    transaction_date = parse_date(date_word.text)
+                    transaction_date = parse_date(date_word.text, date_order)
                     assert transaction_date is not None
 
                     debit = money_from_words(

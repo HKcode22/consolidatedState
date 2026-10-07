@@ -123,3 +123,50 @@ def test_generic_ledger_accepts_money_out_money_in_header_synonyms():
     assert str(result.transactions[0].credit) == "100.00"
     assert str(result.transactions[1].debit) == "25.00"
     assert str(result.statement.closing_balance) == "1075.00"
+
+
+def test_numeric_date_order_can_be_dmy_without_bank_specific_logic():
+    data = _pdf_bytes(
+        [
+            (40, 20, "Statement Period: From Date: 01-JAN-26 To Date 31-JAN-26"),
+            (40, 60, "Date"),
+            (150, 60, "Description"),
+            (390, 60, "Withdrawals"),
+            (465, 60, "Deposits"),
+            (535, 60, "Balance"),
+            (40, 90, "13/01/26"),
+            (150, 90, "Purchase"),
+            (390, 90, "25.00"),
+            (535, 90, "975.00"),
+            (40, 110, "14/01/26"),
+            (150, 110, "Deposit"),
+            (465, 110, "50.00"),
+            (535, 110, "1,025.00"),
+        ]
+    )
+
+    result = parse_statement(_text(data), "dmy.pdf", pdf_bytes=data)
+
+    assert result.transactions[0].date.isoformat() == "2026-01-13"
+    assert result.transactions[1].date.isoformat() == "2026-01-14"
+
+
+def test_ambiguous_numeric_date_uses_statement_period_when_only_one_order_fits():
+    data = _pdf_bytes(
+        [
+            (40, 20, "Statement Period: From Date: 01-JAN-26 To Date 31-JAN-26"),
+            (40, 60, "Date"),
+            (150, 60, "Description"),
+            (390, 60, "Money Out"),
+            (465, 60, "Money In"),
+            (535, 60, "Balance"),
+            (40, 90, "01/12/26"),
+            (150, 90, "Purchase"),
+            (390, 90, "25.00"),
+            (535, 90, "975.00"),
+        ]
+    )
+
+    result = parse_statement(_text(data), "ambiguous.pdf", pdf_bytes=data)
+
+    assert result.transactions[0].date.isoformat() == "2026-01-12"
