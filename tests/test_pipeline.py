@@ -8,7 +8,7 @@ from openpyxl import load_workbook
 from consolidated_state.consolidate import find_duplicate_transactions, monthly_summary, transactions_to_frame
 from consolidated_state.export_excel import build_excel_report
 from consolidated_state.models import StatementSummary, Transaction
-from consolidated_state.validate import reconcile_statement
+from consolidated_state.validate import reconcile_statement, validate_transaction_rows
 
 
 def sample_transactions():
@@ -41,6 +41,36 @@ def test_decimal_math_is_exact_at_cent_level():
     assert summary.iloc[0]["total_debits"] == Decimal("0.30")
     assert summary.iloc[0]["total_credits"] == Decimal("0.30")
     assert summary.iloc[0]["net"] == Decimal("0.00")
+
+
+def test_transaction_integrity_accepts_valid_rows():
+    result = validate_transaction_rows(transactions_to_frame(sample_transactions()))
+    assert result["status"] == "PASS"
+
+
+def test_transaction_integrity_rejects_both_debit_and_credit():
+    bad = Transaction(
+        date(2026, 1, 4),
+        "Invalid row",
+        debit=Decimal("1.00"),
+        credit=Decimal("1.00"),
+        source_file="jan.pdf",
+    )
+    result = validate_transaction_rows(transactions_to_frame([bad]))
+    assert result["status"] == "FAIL"
+    assert "invalid_amount_sides=1" in result["detail"]
+
+
+def test_transaction_integrity_rejects_negative_amount():
+    bad = Transaction(
+        date(2026, 1, 4),
+        "Invalid row",
+        debit=Decimal("-1.00"),
+        source_file="jan.pdf",
+    )
+    result = validate_transaction_rows(transactions_to_frame([bad]))
+    assert result["status"] == "FAIL"
+    assert "negative_amount=1" in result["detail"]
 
 
 def test_duplicate_detection():
