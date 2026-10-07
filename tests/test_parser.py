@@ -100,6 +100,7 @@ def test_generic_sectioned_layout_without_bank_name():
 def test_generic_ledger_accepts_money_out_money_in_header_synonyms():
     data = _pdf_bytes(
         [
+            (40, 20, "Statement Period: From Date: 01-JAN-26 To Date 31-JAN-26"),
             (40, 60, "Posting Date"),
             (150, 60, "Description"),
             (390, 60, "Money Out"),
