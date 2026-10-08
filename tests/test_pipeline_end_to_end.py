@@ -113,6 +113,45 @@ def test_complete_pipeline_allows_multiple_accounts_and_separates_currencies():
     assert result.pdf_report is not None
 
 
+def test_complete_pipeline_keeps_known_and_unknown_currency_totals_separate():
+    known = _sectioned_pdf(
+        account="1111",
+        currency="USD",
+        period="Statement Period: From Date: 01-JAN-26 To Date 31-JAN-26",
+        credit_date="01/13/26",
+        debit_date="01/14/26",
+    )
+    unknown = _sectioned_pdf(
+        account="2222",
+        period="Statement Period: From Date: 01-FEB-26 To Date 28-FEB-26",
+        credit_date="13/02/26",
+        debit_date="14/02/26",
+    )
+
+    result = process_statements(
+        [
+            ("known.pdf", known),
+            ("unknown.pdf", unknown),
+        ]
+    )
+
+    assert result.safe_to_export is True
+    assert result.total_credits is None
+    assert result.total_debits is None
+    assert set(result.currency_summary["currency"]) == {
+        "USD",
+        "Unknown (unknown.pdf)",
+    }
+
+    statuses = {
+        row["check"]: row["status"]
+        for _, row in result.validation.iterrows()
+    }
+    assert statuses["account_consistency"] == "WARNING"
+    assert statuses["currency_consistency"] == "WARNING"
+    assert statuses["statement_period_gaps"] == "SKIPPED"
+
+
 def test_complete_pipeline_blocks_exact_duplicate_pdfs():
     data = _sectioned_pdf()
 

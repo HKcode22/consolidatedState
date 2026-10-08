@@ -45,6 +45,13 @@ def _money(value: object) -> str:
         return str(value)
 
 
+def _currency_for_row(row: pd.Series) -> str:
+    value = row.get("currency")
+    if value is not None and not pd.isna(value) and str(value).strip():
+        return str(value).strip().upper()
+    return f"Unknown ({row.get('source_file', 'unknown source')})"
+
+
 def _section_title(story: list, text: str, styles) -> None:
     story.append(Spacer(1, 0.12 * inch))
     story.append(Paragraph(escape(text), styles["Heading2"]))
@@ -229,7 +236,7 @@ def build_pdf_report(
             row["date"],
             row["description"],
             row["credit"],
-            row["currency"] or f"Unknown ({row['source_file']})",
+            _currency_for_row(row),
             row["source_file"],
         ]
         for _, row in credits.iterrows()
@@ -251,7 +258,7 @@ def build_pdf_report(
             row["date"],
             row["description"],
             row["debit"],
-            row["currency"] or f"Unknown ({row['source_file']})",
+            _currency_for_row(row),
             row["source_file"],
         ]
         for _, row in debits.iterrows()
