@@ -6,6 +6,7 @@ from decimal import Decimal
 import pandas as pd
 
 from .consolidate import (
+    currency_summary,
     find_duplicate_transactions,
     monthly_summary,
     transactions_to_frame,
@@ -16,7 +17,7 @@ from .models import StatementSummary
 from .parser import UnsupportedStatementFormat, parse_statement
 from .pdf_inspect import inspect_and_extract_pdf
 from .readiness import export_is_safe
-from .report_data import build_statement_frame, sum_money
+from .report_data import build_statement_frame
 from .validate import (
     reconcile_statement,
     validate_statement_set,
@@ -30,17 +31,39 @@ class ConsolidationResult:
     statements: pd.DataFrame
     transactions: pd.DataFrame
     monthly_summary: pd.DataFrame
+    currency_summary: pd.DataFrame
     validation: pd.DataFrame
     safe_to_export: bool
     blocking_reasons: list[str]
     excel_report: bytes | None
     pdf_report: bytes | None
-    total_credits: Decimal
-    total_debits: Decimal
+    total_credits: Decimal | None
+    total_debits: Decimal | None
+    combined_currency: str | None
 
     @property
-    def net_change(self) -> Decimal:
+    def net_change(self) -> Decimal | None:
+        if self.total_credits is None or self.total_debits is None:
+            return None
         return self.total_credits - self.total_debits
+
+
+def _combined_totals(
+    summary: pd.DataFrame,
+) -> tuple[Decimal | None, Decimal | None, str | None]:
+    if len(summary) != 1:
+        return None, None, None
+
+    row = summary.iloc[0]
+    credits = row["total_credits"]
+    debits = row["total_debits"]
+    currency_label = str(row["currency"])
+
+    return (
+        credits if isinstance(credits, Decimal) else Decimal(str(credits)),
+        debits if isinstance(debits, Decimal) else Decimal(str(debits)),
+        None if currency_label.startswith("Unknown (") else currency_label,
+    )
 
 
 def process_statements(
@@ -147,6 +170,7 @@ def process_statements(
     inspection_frame = pd.DataFrame(inspections)
     transaction_frame = transactions_to_frame(all_transactions)
     statement_frame = build_statement_frame(statement_summaries)
+    currency_frame = currency_summary(transaction_frame)
 
     if transaction_frame.empty:
         validation_frame = pd.DataFrame(validation_rows)
@@ -160,6 +184,7 @@ def process_statements(
             statements=statement_frame,
             transactions=transaction_frame,
             monthly_summary=monthly_summary(transaction_frame),
+            currency_summary=currency_frame,
             validation=validation_frame,
             safe_to_export=safe,
             blocking_reasons=reasons,
@@ -167,6 +192,7 @@ def process_statements(
             pdf_report=None,
             total_credits=Decimal("0.00"),
             total_debits=Decimal("0.00"),
+            combined_currency=None,
         )
 
     validation_rows.append(
@@ -177,7 +203,8 @@ def process_statements(
     )
 
     duplicate_transactions = find_duplicate_transactions(
-        transaction_frame
+        transaction_frame,
+        statement_summaries,
     )
     if not duplicate_transactions.empty:
         validation_rows.append(
@@ -187,7 +214,8 @@ def process_statements(
                 "status": "NEEDS_REVIEW",
                 "detail": (
                     f"Found {len(duplicate_transactions)} rows "
-                    "participating in possible cross-statement duplicates."
+                    "participating in possible duplicates across statements "
+                    "from the same detected account."
                 ),
                 "difference": None,
             }
@@ -210,21 +238,8 @@ def process_statements(
         parsed_file_count=len(parsed_files),
     )
 
-    credits = transaction_frame[
-        transaction_frame["credit"].notna()
-    ]
-    debits = transaction_frame[
-        transaction_frame["debit"].notna()
-    ]
-    total_credits = (
-        sum_money(credits["credit"])
-        if not credits.empty
-        else Decimal("0.00")
-    )
-    total_debits = (
-        sum_money(debits["debit"])
-        if not debits.empty
-        else Decimal("0.00")
+    total_credits, total_debits, combined_currency = _combined_totals(
+        currency_frame
     )
 
     excel_report = None
@@ -249,6 +264,7 @@ def process_statements(
         statements=statement_frame,
         transactions=transaction_frame,
         monthly_summary=summary_frame,
+        currency_summary=currency_frame,
         validation=validation_frame,
         safe_to_export=safe,
         blocking_reasons=reasons,
@@ -256,4 +272,5 @@ def process_statements(
         pdf_report=pdf_report,
         total_credits=total_credits,
         total_debits=total_debits,
+        combined_currency=combined_currency,
     )

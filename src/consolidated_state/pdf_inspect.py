@@ -61,7 +61,7 @@ def inspect_and_extract_pdf(pdf_bytes: bytes, source_file: str) -> tuple[PdfInsp
             has_text = bool(text.strip())
             if has_text:
                 status = "TEXT_READY"
-                detail = "Embedded PDF text is available for a bank-specific parser."
+                detail = "Embedded PDF text is available for the generic layout parser."
             else:
                 status = "OCR_REQUIRED"
                 detail = "No embedded text found; this statement may be scanned and require OCR."

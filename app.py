@@ -50,14 +50,6 @@ st.markdown(
             padding: 0.85rem 1rem;
             min-height: 92px;
         }
-        .cs-step strong {
-            display: block;
-            margin-bottom: 0.25rem;
-        }
-        .cs-note {
-            font-size: 0.9rem;
-            opacity: 0.78;
-        }
     </style>
     """,
     unsafe_allow_html=True,
@@ -111,52 +103,49 @@ def money_text(value) -> str:
     return f"{value:,.2f}"
 
 
-def detected_currency(result: ConsolidationResult) -> str:
-    if result.statements.empty or "currency" not in result.statements:
-        return ""
-
-    values = {
-        str(value)
-        for value in result.statements["currency"].tolist()
-        if value and value != "Not explicitly identified"
-    }
-
-    if len(values) == 1:
-        return next(iter(values))
-
-    if len(values) > 1:
-        return "Mixed"
-
-    return ""
-
-
 def render_result(result: ConsolidationResult) -> None:
     st.divider()
 
-    currency = detected_currency(result)
-    suffix = f" {currency}" if currency and currency != "Mixed" else ""
-
-    metric_columns = st.columns(5)
-    metric_columns[0].metric(
+    top_metrics = st.columns(2)
+    top_metrics[0].metric(
         "Statements parsed",
         len(result.statements),
     )
-    metric_columns[1].metric(
+    top_metrics[1].metric(
         "Transactions",
         len(result.transactions),
     )
-    metric_columns[2].metric(
-        "Deposits / credits",
-        f"{money_text(result.total_credits)}{suffix}",
-    )
-    metric_columns[3].metric(
-        "Withdrawals / debits",
-        f"{money_text(result.total_debits)}{suffix}",
-    )
-    metric_columns[4].metric(
-        "Net change",
-        f"{money_text(result.net_change)}{suffix}",
-    )
+
+    if result.total_credits is not None and result.total_debits is not None:
+        suffix = (
+            f" {result.combined_currency}"
+            if result.combined_currency
+            else " (currency not identified)"
+        )
+        money_metrics = st.columns(3)
+        money_metrics[0].metric(
+            "Deposits / credits",
+            f"{money_text(result.total_credits)}{suffix}",
+        )
+        money_metrics[1].metric(
+            "Withdrawals / debits",
+            f"{money_text(result.total_debits)}{suffix}",
+        )
+        money_metrics[2].metric(
+            "Net change",
+            f"{money_text(result.net_change)}{suffix}",
+        )
+    else:
+        st.warning(
+            "Grand monetary totals are intentionally not combined because the "
+            "uploaded statements contain multiple or unresolved currencies. "
+            "Use the Currency summary below; no currency conversion is performed."
+        )
+        st.dataframe(
+            result.currency_summary,
+            use_container_width=True,
+            hide_index=True,
+        )
 
     if result.safe_to_export:
         st.success(
@@ -170,10 +159,18 @@ def render_result(result: ConsolidationResult) -> None:
             for reason in result.blocking_reasons:
                 st.write(f"• {reason}")
 
-    overview_tab, sources_tab, transactions_tab, monthly_tab, validation_tab = st.tabs(
+    (
+        overview_tab,
+        sources_tab,
+        currency_tab,
+        transactions_tab,
+        monthly_tab,
+        validation_tab,
+    ) = st.tabs(
         [
             "Overview",
             "Source statements",
+            "Currency summary",
             "Transactions",
             "Monthly summary",
             "Validation",
@@ -199,19 +196,31 @@ def render_result(result: ConsolidationResult) -> None:
                 - Statement layout recognition
                 - Transaction structure
                 - Debit/credit consistency
-                - Statement balance reconciliation
-                - Cross-statement account/currency compatibility when detectable
-                - Statement period overlap and balance continuity when detectable
+                - Per-statement balance reconciliation
+                - Account grouping when identifiers are detectable
+                - Period overlap/gaps only within the same detected account
+                - Currency separation with no automatic conversion
                 """
             )
 
     with sources_tab:
         st.caption(
-            "Account identifiers are never displayed. Only whether a usable "
-            "identifier was detected is shown."
+            "Actual account identifiers are never displayed. Statements are given "
+            "non-sensitive account-group labels when a usable identifier is detected."
         )
         st.dataframe(
             result.statements,
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    with currency_tab:
+        st.caption(
+            "Different currencies are never added together. Unknown-currency "
+            "statements are kept separate by source file."
+        )
+        st.dataframe(
+            result.currency_summary,
             use_container_width=True,
             hide_index=True,
         )
@@ -224,6 +233,10 @@ def render_result(result: ConsolidationResult) -> None:
         )
 
     with monthly_tab:
+        st.caption(
+            "Monthly totals are grouped by currency. Unknown currencies remain "
+            "separate by source rather than being mixed into another currency."
+        )
         st.dataframe(
             result.monthly_summary,
             use_container_width=True,
@@ -311,7 +324,7 @@ with step_1:
         """
         <div class="cs-step">
             <strong>1 · Upload</strong>
-            Add 1–12 PDF statements for the account you want to consolidate.
+            Add 1–12 PDF statements you want included in the consolidated report.
         </div>
         """,
         unsafe_allow_html=True,
@@ -322,8 +335,8 @@ with step_2:
         """
         <div class="cs-step">
             <strong>2 · Review</strong>
-            The app parses the layout and checks balances, dates, duplicates,
-            and statement compatibility.
+            The app parses each layout and validates balances, dates, accounts,
+            duplicates, and currency handling.
         </div>
         """,
         unsafe_allow_html=True,
@@ -334,16 +347,16 @@ with step_3:
         """
         <div class="cs-step">
             <strong>3 · Download</strong>
-            If validation passes, download the consolidated Excel and PDF
-            reports.
+            If validation passes, download the consolidated Excel and PDF reports.
         </div>
         """,
         unsafe_allow_html=True,
     )
 
 st.info(
-    "Statements can come from different banks and layouts. For one consolidated "
-    "report they should normally represent the same account and currency."
+    "Statements may come from different banks and accounts. If currencies differ "
+    "or cannot be identified, their monetary totals are kept separate and are "
+    "never silently converted or added together."
 )
 
 uploaded_files = st.file_uploader(

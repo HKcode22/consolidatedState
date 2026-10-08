@@ -8,18 +8,11 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import landscape, letter
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import inch
-from reportlab.platypus import (
-    LongTable,
-    PageBreak,
-    Paragraph,
-    SimpleDocTemplate,
-    Spacer,
-    Table,
-    TableStyle,
-)
+from reportlab.platypus import LongTable, Paragraph, SimpleDocTemplate, Spacer, TableStyle
 
-from .report_data import build_overview_frame, build_statement_frame
+from .consolidate import currency_summary
 from .models import StatementSummary
+from .report_data import build_overview_frame, build_statement_frame
 
 DISCLAIMER = (
     "Consolidated report derived from source statements. "
@@ -50,10 +43,6 @@ def _money(value: object) -> str:
         return f"{value:,.2f}"
     except Exception:
         return str(value)
-
-
-def _cell(value: object, style) -> Paragraph:
-    return Paragraph(escape(_display(value)), style)
 
 
 def _section_title(story: list, text: str, styles) -> None:
@@ -144,6 +133,13 @@ def build_pdf_report(
     story: list[object] = []
     story.append(Paragraph("Consolidated Bank Statement Report", styles["Title"]))
     story.append(Paragraph(DISCLAIMER, styles["BodyText"]))
+    story.append(
+        Paragraph(
+            "Different or unidentified currencies are kept separate. "
+            "No currency conversion is performed.",
+            styles["BodyText"],
+        )
+    )
     story.append(Spacer(1, 0.14 * inch))
 
     overview = build_overview_frame(transactions, statements)
@@ -157,7 +153,29 @@ def build_pdf_report(
             overview_rows,
             [2.6 * inch, 3.3 * inch],
             styles["BodyText"],
-            money_columns=set(),
+        )
+    )
+
+    _section_title(story, "Currency Summary", styles)
+    currencies = currency_summary(transactions)
+    currency_rows = [
+        [
+            row["currency"],
+            row["source_statements"],
+            row["transactions"],
+            row["total_debits"],
+            row["total_credits"],
+            row["net"],
+        ]
+        for _, row in currencies.iterrows()
+    ]
+    story.append(
+        _table(
+            ["Currency", "Sources", "Transactions", "Debits", "Credits", "Net"],
+            currency_rows,
+            [1.8 * inch, 0.8 * inch, 0.9 * inch, 1.4 * inch, 1.4 * inch, 1.4 * inch],
+            styles["BodyText"],
+            money_columns={3, 4, 5},
         )
     )
 
@@ -166,6 +184,7 @@ def build_pdf_report(
     source_rows = [
         [
             row["source_file"],
+            row["account_group"],
             row["statement_period"],
             row["currency"],
             "Yes" if row["account_identifier_detected"] else "No",
@@ -179,6 +198,7 @@ def build_pdf_report(
         _table(
             [
                 "Source file",
+                "Account group",
                 "Statement period",
                 "Currency",
                 "Account ID detected",
@@ -188,16 +208,17 @@ def build_pdf_report(
             ],
             source_rows,
             [
-                1.55 * inch,
-                1.55 * inch,
-                0.85 * inch,
-                0.85 * inch,
-                1.0 * inch,
-                1.0 * inch,
-                2.45 * inch,
+                1.35 * inch,
+                0.8 * inch,
+                1.35 * inch,
+                0.9 * inch,
+                0.75 * inch,
+                0.95 * inch,
+                0.95 * inch,
+                2.1 * inch,
             ],
             styles["BodyText"],
-            money_columns={4, 5},
+            money_columns={5, 6},
         )
     )
 
@@ -208,15 +229,16 @@ def build_pdf_report(
             row["date"],
             row["description"],
             row["credit"],
+            row["currency"] or f"Unknown ({row['source_file']})",
             row["source_file"],
         ]
         for _, row in credits.iterrows()
     ]
     story.append(
         _table(
-            ["Date", "Description", "Amount", "Source"],
+            ["Date", "Description", "Amount", "Currency", "Source"],
             credit_rows,
-            [0.9 * inch, 5.25 * inch, 1.15 * inch, 2.15 * inch],
+            [0.8 * inch, 4.8 * inch, 1.1 * inch, 1.25 * inch, 1.8 * inch],
             styles["BodyText"],
             money_columns={2},
         )
@@ -229,15 +251,16 @@ def build_pdf_report(
             row["date"],
             row["description"],
             row["debit"],
+            row["currency"] or f"Unknown ({row['source_file']})",
             row["source_file"],
         ]
         for _, row in debits.iterrows()
     ]
     story.append(
         _table(
-            ["Date", "Description", "Amount", "Source"],
+            ["Date", "Description", "Amount", "Currency", "Source"],
             debit_rows,
-            [0.9 * inch, 5.25 * inch, 1.15 * inch, 2.15 * inch],
+            [0.8 * inch, 4.8 * inch, 1.1 * inch, 1.25 * inch, 1.8 * inch],
             styles["BodyText"],
             money_columns={2},
         )
@@ -246,6 +269,7 @@ def build_pdf_report(
     _section_title(story, "Monthly Summary", styles)
     monthly_rows = [
         [
+            row["currency"],
             row["month"],
             row["total_debits"],
             row["total_credits"],
@@ -255,11 +279,11 @@ def build_pdf_report(
     ]
     story.append(
         _table(
-            ["Month", "Debits", "Credits", "Net"],
+            ["Currency", "Month", "Debits", "Credits", "Net"],
             monthly_rows,
-            [1.5 * inch, 1.5 * inch, 1.5 * inch, 1.5 * inch],
+            [2.3 * inch, 1.2 * inch, 1.4 * inch, 1.4 * inch, 1.4 * inch],
             styles["BodyText"],
-            money_columns={1, 2, 3},
+            money_columns={2, 3, 4},
         )
     )
 

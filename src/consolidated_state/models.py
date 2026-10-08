@@ -14,6 +14,7 @@ class Transaction:
     balance: Decimal | None = None
     source_file: str = ""
     statement_period: str = ""
+    currency: str | None = None
 
 
 @dataclass(frozen=True)

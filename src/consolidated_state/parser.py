@@ -55,7 +55,11 @@ def _enrich_result(result: ParseResult, layout: DocumentLayout) -> ParseResult:
     )
 
     transactions = [
-        replace(transaction, statement_period=period)
+        replace(
+            transaction,
+            statement_period=period,
+            currency=metadata.currency,
+        )
         for transaction in result.transactions
     ]
 

@@ -1,18 +1,16 @@
 from __future__ import annotations
 
-from decimal import Decimal
 from io import BytesIO
 
 import pandas as pd
 from openpyxl.styles import Font
 
+from .consolidate import currency_summary
 from .models import StatementSummary
+from .report_data import build_overview_frame, build_statement_frame
 
 DISCLAIMER = "Consolidated report derived from source statements. Not an official bank-issued statement."
-MONEY_FORMAT = '$#,##0.00;[Red]-$#,##0.00'
-
-
-from .report_data import build_overview_frame, build_statement_frame
+MONEY_FORMAT = '#,##0.00;[Red]-#,##0.00'
 
 
 def build_excel_report(
@@ -26,28 +24,65 @@ def build_excel_report(
 
     credits = transactions[transactions["credit"].notna()].copy()
     debits = transactions[transactions["debit"].notna()].copy()
+    by_currency = currency_summary(transactions)
 
-    credit_columns = ["date", "description", "credit", "source_file", "statement_period"]
-    debit_columns = ["date", "description", "debit", "source_file", "statement_period"]
+    credit_columns = [
+        "date",
+        "description",
+        "credit",
+        "currency",
+        "source_file",
+        "statement_period",
+    ]
+    debit_columns = [
+        "date",
+        "description",
+        "debit",
+        "currency",
+        "source_file",
+        "statement_period",
+    ]
 
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-        build_overview_frame(transactions, statements).to_excel(writer, sheet_name="Overview", index=False)
-        build_statement_frame(statements).to_excel(writer, sheet_name="Source Statements", index=False)
-        credits[credit_columns].to_excel(writer, sheet_name="Credits & Deposits", index=False)
-        debits[debit_columns].to_excel(writer, sheet_name="Debits & Withdrawals", index=False)
-        transactions.to_excel(writer, sheet_name="All Transactions", index=False)
-        summary.to_excel(writer, sheet_name="Monthly Summary", index=False)
-        validation.to_excel(writer, sheet_name="Validation", index=False)
+        build_overview_frame(transactions, statements).to_excel(
+            writer, sheet_name="Overview", index=False
+        )
+        by_currency.to_excel(
+            writer, sheet_name="Currency Summary", index=False
+        )
+        build_statement_frame(statements).to_excel(
+            writer, sheet_name="Source Statements", index=False
+        )
+        credits[credit_columns].to_excel(
+            writer, sheet_name="Credits & Deposits", index=False
+        )
+        debits[debit_columns].to_excel(
+            writer, sheet_name="Debits & Withdrawals", index=False
+        )
+        transactions.to_excel(
+            writer, sheet_name="All Transactions", index=False
+        )
+        summary.to_excel(
+            writer, sheet_name="Monthly Summary", index=False
+        )
+        validation.to_excel(
+            writer, sheet_name="Validation", index=False
+        )
 
         workbook = writer.book
         info = workbook.create_sheet("About")
         info["A1"] = "ConsolidatedState"
         info["A1"].font = Font(bold=True, size=14)
         info["A3"] = DISCLAIMER
+        info["A5"] = (
+            "Amounts from different or unidentified currencies are kept "
+            "separate. No currency conversion is performed."
+        )
         info.column_dimensions["A"].width = 95
 
         data_sheets = [
             "Overview",
+            "Currency Summary",
             "Source Statements",
             "Credits & Deposits",
             "Debits & Withdrawals",
@@ -74,6 +109,7 @@ def build_excel_report(
                 )
 
         for sheet_name, money_headers in {
+            "Currency Summary": ("total_debits", "total_credits", "net"),
             "Source Statements": ("opening_balance", "closing_balance"),
             "Credits & Deposits": ("credit",),
             "Debits & Withdrawals": ("debit",),
@@ -104,6 +140,8 @@ def build_excel_report(
         }
         for row in range(2, overview_sheet.max_row + 1):
             if overview_sheet.cell(row=row, column=1).value in money_metrics:
-                overview_sheet.cell(row=row, column=2).number_format = MONEY_FORMAT
+                value_cell = overview_sheet.cell(row=row, column=2)
+                if isinstance(value_cell.value, (int, float)):
+                    value_cell.number_format = MONEY_FORMAT
 
     return buffer.getvalue()
