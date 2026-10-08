@@ -108,7 +108,7 @@ The application must never:
 
 Unknown or unreconciled statements are blocked for review.
 
-Cross-statement validation also checks detected account identity, explicit currency, statement-period overlap/gaps, and adjacent opening/closing balance continuity. Numeric dates are interpreted as MM/DD or DD/MM only when the order can be inferred safely; ambiguous dates are not guessed.
+Cross-statement validation groups statements by detected account identity. Multiple accounts are allowed; period overlap/gap and adjacent balance-continuity checks are performed only within the same detected account. Different or unidentified currencies are kept in separate summary buckets and are never silently added together or converted. Numeric dates are interpreted as MM/DD or DD/MM only when the order can be inferred safely; ambiguous dates are not guessed.
 
 Money arithmetic uses `Decimal`, not binary floating point.
 
@@ -118,9 +118,11 @@ The application produces both a detailed Excel workbook and a human-readable con
 
 The `.xlsx` report contains:
 
-- `Transactions` — normalized transactions in chronological order
-- `Monthly Summary` — debit, credit, and net totals by month
-- `Validation` — intake, parser, transaction-integrity, and reconciliation checks
+- `Currency Summary` — debit, credit, and net totals kept separate by currency/source when necessary
+- `Source Statements` — source, account-group label, period, currency, balances, and parser strategy
+- `All Transactions` — normalized transactions in chronological order, including detected currency
+- `Monthly Summary` — debit, credit, and net totals by month and currency
+- `Validation` — intake, parser, transaction-integrity, account-aware continuity, and reconciliation checks
 - `About` — report disclaimer and generation notes
 
 The PDF presents the same consolidated information as a readable document: overview, source-statement interpretation, combined credits/deposits, combined debits/withdrawals, monthly summary, and validation results.

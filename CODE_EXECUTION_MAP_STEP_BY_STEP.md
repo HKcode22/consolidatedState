@@ -3445,7 +3445,7 @@ Input:
 list of StatementSummary
 ~~~
 
-It checks all statements together.
+It checks all statements together, but it no longer assumes they must all be the same account.
 
 First account fingerprints:
 
@@ -3457,89 +3457,118 @@ known_accounts = {
 }
 ~~~
 
-If set contains more than one unique value:
+If more than one fingerprint is present:
 
 ~~~text
 multiple detected accounts
-→ FAIL
+→ WARNING
 ~~~
+
+That is allowed.
+
+The important rule is:
+
+~~~text
+different accounts may be consolidated
+but
+continuity checks must not compare one account to another
+~~~
+
+The code therefore builds account groups. A known fingerprint groups statements together. A statement with no detectable account identifier is kept in its own conservative group instead of being assumed to match another account.
 
 ---
 
-# 92. Currency consistency
+# 92. Currency handling
 
-Same pattern:
+The transaction model now carries:
 
 ~~~python
-known_currencies = {
-    statement.currency
-    for statement in statements
-    if statement.currency
-}
+currency: str | None = None
 ~~~
 
-If:
+After metadata extraction, parser.py copies the detected statement currency onto each Transaction.
+
+consolidate.py then creates safe currency buckets.
+
+Known currency example:
 
 ~~~text
-{"USD", "PKR"}
+PKR
 ~~~
 
-then:
+Unknown currency example:
 
 ~~~text
-FAIL
+Unknown (statement-name.pdf)
 ~~~
+
+So a PKR statement and an unknown-currency statement produce two separate buckets.
+
+If multiple explicit currencies are detected:
+
+~~~text
+WARNING
+~~~
+
+not failure.
+
+The report is still allowed, but monetary totals remain separate.
 
 No currency conversion occurs.
 
 ---
 
-# 93. Adjacent statement comparison
+# 93. Account-aware adjacent statement comparison
 
-Code:
+The old design sorted every dated statement together.
 
-~~~python
-ordered = sorted(
-    dated,
-    key=lambda statement:
-        statement.statement_start
-)
-~~~
-
-Then:
-
-~~~python
-for previous, current in zip(
-    ordered,
-    ordered[1:]
-):
-~~~
-
-If ordered is:
+The corrected design first groups statements by account:
 
 ~~~text
-January
-February
-March
+Account 1
+    January
+    February
+
+Account 2
+    August
+    September
 ~~~
 
-zip creates:
+Then only statements inside the SAME group are sorted and paired.
 
-~~~text
-January ↔ February
-February ↔ March
+Conceptually:
+
+~~~python
+for account_group in comparable_groups:
+    ordered = sorted(
+        account_group,
+        key=lambda statement:
+            statement.statement_start
+    )
+
+    for previous, current in zip(
+        ordered,
+        ordered[1:]
+    ):
+        ...
 ~~~
 
-This is how consecutive periods are compared.
+If there are two statements but they belong to two different accounts, overlap/gap/balance-continuity checks return SKIPPED rather than inventing a relationship between them.
 
 ---
 
 # 94. Overlap, gaps, continuity
 
+Within one detected account:
+
 Overlap:
 
 ~~~python
-if current.statement_start <= previous.statement_end:
+if (
+    current.statement_start
+    <= previous.statement_end
+):
+    ...
 ~~~
 
 Gap:
@@ -3560,7 +3589,9 @@ abs(
 ) > CENT
 ~~~
 
-These are cross-statement checks.
+Across DIFFERENT accounts, these checks are not performed.
+
+This is why two unrelated accounts can have overlapping dates or a large calendar gap without blocking the consolidated report.
 
 ---
 
@@ -5202,3 +5233,17 @@ Those omitted pieces affect appearance or testing, not the core question:
 How does an uploaded bank-statement PDF
 become a validated consolidated report?
 ~~~
+
+
+---
+
+# Current multi-account / multi-currency behavior
+
+The current implementation allows multiple detected accounts in one consolidation.
+
+It also prevents a serious accounting error: amounts from different or unidentified currencies are never collapsed into a single grand monetary total.
+
+The current transaction DataFrame includes a `currency` column. Monthly summaries are grouped by both currency and month, and the result also contains a dedicated `currency_summary` DataFrame.
+
+If exactly one safe currency bucket exists, `ConsolidationResult.total_credits` and `total_debits` are populated. If more than one bucket exists, those grand-total fields are `None`, and the frontend displays the separate currency summary instead.
+

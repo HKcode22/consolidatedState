@@ -559,6 +559,7 @@ Transaction(
     balance=...,
     source_file=...,
     statement_period=...,
+    currency=...,
 )
 ```
 
@@ -1155,31 +1156,33 @@ then:
 FAIL
 ```
 
-## Account consistency
+## Account grouping
 
-If account identifiers can be detected, the system checks that the statements belong to the same account.
+Different accounts are allowed in one consolidated report.
 
-## Currency consistency
+When account identifiers can be detected, the application hashes them and groups statements by that fingerprint. It does **not** require every uploaded statement to belong to one account.
 
-If explicit currencies are detected, the system blocks contradictory currencies.
+That matters because continuity checks only make sense within the same account.
 
-The application currently does **not** convert currencies.
+## Currency handling
 
-## Statement-period overlap
+The application does **not** perform currency conversion.
 
-If two statements cover overlapping dates, that can cause duplicate activity.
+If all transactions belong to one detected currency, a normal combined monetary total can be shown.
 
-The application flags that for review.
+If currencies differ, or a statement's currency cannot be identified, the application keeps those monetary totals in separate currency/source buckets instead of adding unlike amounts together.
 
-## Statement-period gaps
+For example, PKR 1,000 and an unknown-currency 100 are **not** reported as PKR 1,100.
 
-If January ends January 31 and the next statement begins February 5, there is a gap.
+## Statement-period overlap and gaps
 
-That is surfaced as a warning.
+Overlap/gap checks are performed only between statements belonging to the same detected account.
+
+Statements from different accounts may naturally cover different or overlapping date ranges, so comparing their continuity would be meaningless.
 
 ## Balance continuity
 
-When consecutive statement balances are available:
+When consecutive statements from the same detected account have balances available:
 
 ```text
 previous closing balance
@@ -1247,6 +1250,7 @@ The workbook currently includes sheets such as:
 
 ```text
 Overview
+Currency Summary
 Source Statements
 Credits & Deposits
 Debits & Withdrawals

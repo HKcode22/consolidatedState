@@ -10,7 +10,7 @@ A small, reliable web application that consolidates bank-statement transactions 
 2. Uploads 1–12 PDF statements intended for one consolidation.
 3. The app inspects each PDF and determines whether text/layout data are available.
 4. A generic structural parser recognizes the statement layout.
-5. Transactions normalize to date, description, debit, credit, balance, source file, and statement period.
+5. Transactions normalize to date, description, debit, credit, balance, currency, source file, and statement period.
 6. Validation runs before export.
 7. Any failed/ambiguous statement blocks export.
 8. User previews the result and downloads one consolidated workbook.
@@ -50,17 +50,18 @@ New examples are used to discover **new layout families**, not to hardcode bank 
 - Every row must have a date, description, source, and exactly one debit/credit side.
 - Duplicate/overlapping transaction detection.
 - Opening + credits - debits = closing balance where balances are available.
-- Same-account compatibility checks using hashed account identifiers when detectable.
-- Explicit-currency consistency checks; no currency conversion.
-- Statement-period overlap/gap checks and adjacent balance continuity.
+- Account grouping using hashed account identifiers when detectable; multiple accounts are allowed.
+- Different or unidentified currencies remain in separate totals; no currency conversion.
+- Statement-period overlap/gap checks and adjacent balance continuity run only within the same detected account.
 - International numeric-date order is inferred safely instead of assuming U.S. format.
 - Fail-closed export: one failed input blocks the consolidated workbook.
 
 ## Phase 5 — Consolidation
 
 - Combine transactions chronologically.
-- Monthly debit/credit/net summaries.
-- Preserve source file and statement period.
+- Monthly debit/credit/net summaries grouped safely by currency.
+- Currency summary prevents cross-currency arithmetic.
+- Preserve source file, currency, and statement period.
 - Validation report accompanies output.
 
 ## Phase 6 — Broader format coverage
