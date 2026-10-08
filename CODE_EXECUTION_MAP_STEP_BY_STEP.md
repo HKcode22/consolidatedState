@@ -1,4 +1,4 @@
-# CODE EXECUTION MAP — Read the Project From Start to Finish
+# CODE EXECUTION MAP — Complete Self-Contained Walkthrough
 
 This is the third learning document for ConsolidatedState.
 
@@ -8,17 +8,229 @@ Use this file when the main problem is:
 
 This guide solves that by following the real execution path in one direction.
 
-Do not read the repository alphabetically.
+**You do not need to open the Python files while reading this guide.** The important code blocks from each file are included directly below, followed by detailed explanations of what they receive, what they do, why they exist, what they return, and what runs next.
 
-Do not open every helper as soon as you see its name.
+Some purely visual CSS, repetitive formatting code, and test-fixture boilerplate are intentionally omitted because they are not necessary to understand how the application works. The important execution and financial-processing code is included here.
 
-Instead, follow this exact order.
+Read this document from top to bottom. The file names are chapter labels, not instructions to leave this document.
 
 ---
 
+# How to use this document
+
+Treat this Markdown file as the codebase walkthrough itself.
+
+When a block calls a function from another file, I will:
+
+~~~text
+1. show the caller code;
+2. explain the arguments;
+3. show the important called code here in this document;
+4. explain its return value;
+5. continue the caller afterward.
+~~~
+
+You therefore do not need to keep switching tabs between Python files.
+
+A good question to keep asking is:
+
+~~~text
+"What object do we have right now,
+and what function receives it next?"
+~~~
+
+The most important data-shape transitions are:
+
+~~~text
+UploadedFile
+    ↓
+(filename, PDF bytes)
+    ↓
+PdfInspection + plain text
+    ↓
+DocumentLayout
+    ↓
+ParseResult
+    ↓
+list[Transaction]
+    ↓
+pandas DataFrame
+    ↓
+validation tables
+    ↓
+Excel/PDF bytes
+    ↓
+ConsolidationResult
+    ↓
+browser
+~~~
+
+---
+
+# Master code-flow skeleton before the detailed walkthrough
+
+This is not a different implementation. It is a compressed view of the real current code so you can see the whole call chain before studying each block.
+
+~~~python
+# app.py
+
+uploaded_files = st.file_uploader(
+    "Upload bank statement PDFs",
+    type=["pdf"],
+    accept_multiple_files=True,
+)
+
+if st.button("Process statements"):
+    inputs = [
+        (uploaded.name, uploaded.getvalue())
+        for uploaded in uploaded_files
+    ]
+
+    st.session_state["consolidation_result"] = (
+        process_statements(inputs)
+    )
+~~~
+
+That calls the backend workflow:
+
+~~~python
+# pipeline.py
+
+def process_statements(files):
+    for source_file, pdf_bytes in files:
+
+        inspection, text = inspect_and_extract_pdf(
+            pdf_bytes,
+            source_file,
+        )
+
+        if inspection.status != "TEXT_READY":
+            continue
+
+        parsed = parse_statement(
+            text,
+            source_file,
+            pdf_bytes=pdf_bytes,
+        )
+
+        all_transactions.extend(
+            parsed.transactions
+        )
+
+        statement_summaries.append(
+            parsed.statement
+        )
+
+    transaction_frame = transactions_to_frame(
+        all_transactions
+    )
+
+    validation_rows.append(
+        validate_transaction_rows(
+            transaction_frame
+        )
+    )
+
+    validation_rows.extend(
+        validate_statement_set(
+            statement_summaries
+        )
+    )
+
+    for statement in statement_summaries:
+        validation_rows.append(
+            reconcile_statement(
+                statement,
+                transaction_frame,
+            )
+        )
+
+    safe, reasons = export_is_safe(
+        validation_frame,
+        uploaded_file_count=len(files),
+        parsed_file_count=len(parsed_files),
+    )
+
+    if safe:
+        excel_report = build_excel_report(...)
+        pdf_report = build_pdf_report(...)
+
+    return ConsolidationResult(...)
+~~~
+
+The PDF intake called above is:
+
+~~~python
+# pdf_inspect.py
+
+with fitz.open(
+    stream=pdf_bytes,
+    filetype="pdf"
+) as document:
+
+    text = "\n".join(
+        page.get_text("text")
+        for page in document
+    )
+~~~
+
+The parser then creates geometry from the same PDF bytes:
+
+~~~python
+# parser.py
+
+layout = extract_document_layout(
+    pdf_bytes
+)
+
+for parser in PARSERS:
+    if not parser.matches(layout):
+        continue
+
+    return _enrich_result(
+        parser.parse(
+            layout,
+            source_file
+        ),
+        layout,
+    )
+~~~
+
+Geometry extraction is:
+
+~~~python
+# layout.py
+
+page.get_text("words")
+    ↓
+_group_words_into_rows(...)
+    ↓
+PageLayout
+    ↓
+DocumentLayout
+~~~
+
+The generic strategy eventually creates:
+
+~~~python
+Transaction(
+    transaction_date,
+    description,
+    debit=debit,
+    credit=credit,
+    balance=balance,
+    source_file=source_file,
+)
+~~~
+
+Everything after that works on normalized Transaction objects rather than raw PDF geometry.
+
+Now the detailed walkthrough begins.
+
+
 # 1. The complete file order
 
-Read these files in this order:
+This document walks through the files in this order:
 
 ~~~text
 0. .replit
@@ -155,7 +367,7 @@ render_result(...)
 browser tables + download buttons
 ~~~
 
-Keep this map open while reading the code.
+Keep this map in mind while reading the sections below. All necessary code excerpts are in this document.
 
 ---
 
@@ -230,7 +442,7 @@ means Streamlit listens internally on port 5000, and Replit exposes the web app 
 
 A running Python/Streamlit process executing app.py.
 
-## Go next to
+## The next section below covers
 
 ~~~text
 .streamlit/config.toml
@@ -277,7 +489,7 @@ It is runtime configuration.
 
 A Streamlit server ready to execute app.py.
 
-## Go next to
+## The next section below covers
 
 ~~~text
 src/consolidated_state/models.py
@@ -467,7 +679,7 @@ status = TEXT_READY
 
 You now know the main object types the rest of the program passes around.
 
-## Go next to
+## The next section below covers
 
 ~~~text
 app.py
@@ -496,9 +708,9 @@ pipeline.py
     complete document-processing workflow
 ~~~
 
-Do not open pipeline.py yet.
+Do not mentally jump into pipeline.py yet; this document will reach it in order.
 
-First understand what app.py sends into it.
+First understand what app.py sends into it; the pipeline code is included later in this document.
 
 ---
 
@@ -532,9 +744,9 @@ If one exists, app.py eventually calls:
 if passcode_matches(supplied, configured):
 ~~~
 
-STOP HERE.
+Pause the current call here.
 
-Now open:
+The next section below contains the important code from:
 
 ~~~text
 src/consolidated_state/access.py
@@ -578,9 +790,7 @@ or
 False
 ~~~
 
-After understanding this function, RETURN TO app.py.
-
-Do not keep reading unrelated files.
+After this function returns, execution resumes in the app.py section immediately below.
 
 ---
 
@@ -685,7 +895,7 @@ st.session_state["consolidation_result"] = (
 )
 ~~~
 
-STOP app.py here.
+Pause app.py here.
 
 This is the major jump.
 
@@ -703,7 +913,7 @@ into:
 process_statements()
 ~~~
 
-Now open:
+The next section below contains the important code from:
 
 ~~~text
 src/consolidated_state/pipeline.py
@@ -901,7 +1111,7 @@ inspection, text = inspect_and_extract_pdf(
 )
 ~~~
 
-STOP pipeline.py.
+Pause pipeline.py here.
 
 Inputs being sent:
 
@@ -922,7 +1132,7 @@ Expected return:
 )
 ~~~
 
-Now open:
+The next section below contains the important code from:
 
 ~~~text
 src/consolidated_state/pdf_inspect.py
@@ -1163,7 +1373,7 @@ return (
 
 Two values.
 
-Now mentally RETURN TO:
+Execution now returns to:
 
 ~~~text
 pipeline.py
@@ -1304,7 +1514,7 @@ pdf_bytes
     original PDF bytes
 ~~~
 
-Now open:
+The next section below contains the important code from:
 
 ~~~text
 src/consolidated_state/parser.py
@@ -1844,7 +2054,7 @@ Once return runs, later strategies are not tried.
 
 ---
 
-# 51. Before generic_parsers.py, read metadata.py entry point
+# 51. Before the generic parser strategies, the next section explains metadata.py
 
 parser.py later calls:
 
@@ -3503,7 +3713,7 @@ sum_money lives in:
 report_data.py
 ~~~
 
-Open it next.
+The next section below explains it.
 
 ---
 
@@ -4972,3 +5182,23 @@ DISPLAY
 When you see a function call into another file, it is not random hopping.
 
 It is one stage handing an object to the next stage.
+
+
+---
+
+# Self-contained reading rule for the remaining sections
+
+Whenever an older sentence in this document says something similar to "return to pipeline.py" or names the next file, interpret it as:
+
+> Continue to the next section in THIS Markdown document.
+
+The file name tells you which source module the shown code belongs to. You do not need to open that module separately.
+
+The important source excerpts required to understand the execution path are included here. The only code intentionally not reproduced in full is code that does not materially change the program flow, such as large CSS styling blocks, repetitive Excel column formatting, repetitive ReportLab visual formatting, and automated-test fixture setup.
+
+Those omitted pieces affect appearance or testing, not the core question:
+
+~~~text
+How does an uploaded bank-statement PDF
+become a validated consolidated report?
+~~~
